@@ -1,15 +1,23 @@
 using System.Data;
 using System.Data.Common;
+using System.Diagnostics.CodeAnalysis;
 
 namespace POSCAM.UpdateServer.Tests.TestDoubles;
 
 internal sealed class FakeDbConnection : DbConnection
 {
     private ConnectionState _state = ConnectionState.Closed;
+    private string _connectionString = string.Empty;
 
     public FakeDbTransaction? LastTransaction { get; private set; }
 
-    public override string ConnectionString { get; set; } = string.Empty;
+    [AllowNull]
+    public override string ConnectionString
+    {
+        get => _connectionString;
+        set => _connectionString = value ?? string.Empty;
+    }
+
     public override string Database => "poscam_update_test";
     public override string DataSource => "fake";
     public override string ServerVersion => "test";
