@@ -20,15 +20,15 @@ public static class RateLimitResponseWriter
 
         response.StatusCode = StatusCodes.Status429TooManyRequests;
         response.ContentType = "application/json; charset=utf-8";
-        response.Headers.CacheControl = "no-store";
-        response.Headers.Pragma = "no-cache";
-        response.Headers.Expires = "0";
+        response.Headers["Cache-Control"] = "no-store";
+        response.Headers["Pragma"] = "no-cache";
+        response.Headers["Expires"] = "0";
 
         if (context.Lease.TryGetMetadata(
                 MetadataName.RetryAfter,
                 out var retryAfter))
         {
-            response.Headers.RetryAfter = Math.Max(
+            response.Headers["Retry-After"] = Math.Max(
                     1,
                     (int)Math.Ceiling(retryAfter.TotalSeconds))
                 .ToString(System.Globalization.CultureInfo.InvariantCulture);
