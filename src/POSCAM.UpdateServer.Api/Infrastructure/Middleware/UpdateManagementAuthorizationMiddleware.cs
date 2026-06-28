@@ -1,5 +1,6 @@
 using POSCAM.UpdateServer.Api.Authorization;
 using POSCAM.UpdateServer.Api.Models.Common;
+using POSCAM.UpdateServer.Api.Models.Enums;
 
 namespace POSCAM.UpdateServer.Api.Infrastructure.Middleware;
 
@@ -43,15 +44,30 @@ public sealed class UpdateManagementAuthorizationMiddleware
             return;
         }
 
+        var httpStatusCode = result.HttpStatusCode is
+            StatusCodes.Status401Unauthorized or
+            StatusCodes.Status403Forbidden or
+            StatusCodes.Status503ServiceUnavailable
+                ? result.HttpStatusCode
+                : StatusCodes.Status503ServiceUnavailable;
+
+        var errorCode = httpStatusCode == result.HttpStatusCode
+            ? result.ErrorCode
+            : UpdateErrorCode.ExternalServiceUnavailable;
+
+        var message = httpStatusCode == result.HttpStatusCode
+            ? result.Message
+            : "관리자 권한 확인 서비스를 사용할 수 없습니다.";
+
         context.Response.Clear();
-        context.Response.StatusCode = result.HttpStatusCode;
+        context.Response.StatusCode = httpStatusCode;
         context.Response.ContentType = "application/json; charset=utf-8";
-        context.Response.Headers.CacheControl = "no-store";
-        context.Response.Headers.Pragma = "no-cache";
+        context.Response.Headers["Cache-Control"] = "no-store";
+        context.Response.Headers["Pragma"] = "no-cache";
 
         var response = ApiResponse<object?>.Fail(
-            result.ErrorCode,
-            result.Message);
+            errorCode,
+            message);
 
         await context.Response.WriteAsJsonAsync(
             response,
