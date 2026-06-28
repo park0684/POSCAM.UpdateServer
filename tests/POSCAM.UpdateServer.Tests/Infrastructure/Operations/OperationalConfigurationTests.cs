@@ -97,6 +97,8 @@ public class OperationalConfigurationTests
             target.ForwardedHeaders.HasFlag(ForwardedHeaders.XForwardedFor));
         Assert.True(
             target.ForwardedHeaders.HasFlag(ForwardedHeaders.XForwardedProto));
+        Assert.Empty(target.KnownNetworks);
+        Assert.Equal(2, target.KnownProxies.Count);
         Assert.Contains(IPAddress.Parse("172.18.0.1"), target.KnownProxies);
         Assert.Contains(IPAddress.Parse("192.168.0.10"), target.KnownProxies);
     }
