@@ -108,7 +108,7 @@
   - `dotnet test POSCAM.UpdateServer.sln -c Release --no-build`
 - Build: 로컬 확인 필요
 - Test: 로컬 확인 필요
-- 예상 전체 테스트 수: 약 214개
+- 예상 전체 테스트 수: 약 215개
 
 ## 남은 문제
 
