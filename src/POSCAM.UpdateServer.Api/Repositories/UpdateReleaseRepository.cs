@@ -48,6 +48,16 @@ SELECT EXISTS
       AND (@ExcludeReleaseCode IS NULL OR rel_code <> @ExcludeReleaseCode)
 );";
 
+    internal const string HasPublishedReleaseSql = @"
+SELECT EXISTS
+(
+    SELECT 1
+    FROM update_releases
+    WHERE rel_product_code = @ProductCode
+      AND rel_channel = @Channel
+      AND rel_status = @PublishedStatus
+);";
+
     internal const string CreateDraftSql = @"
 INSERT INTO update_releases
 (
@@ -237,6 +247,32 @@ LIMIT 1;";
             });
     }
 
+    public Task<bool> HasPublishedReleaseAsync(
+        string productCode,
+        string channel,
+        IDbTransaction? transaction = null,
+        CancellationToken cancellationToken = default)
+    {
+        return ExecuteAsync(
+            transaction,
+            cancellationToken,
+            async (connection, activeTransaction) =>
+            {
+                var command = CreateCommand(
+                    HasPublishedReleaseSql,
+                    new
+                    {
+                        ProductCode = productCode,
+                        Channel = channel,
+                        PublishedStatus = (int)ReleaseStatus.Published
+                    },
+                    activeTransaction,
+                    cancellationToken);
+
+                return await connection.ExecuteScalarAsync<bool>(command);
+            });
+    }
+
     public Task<long> CreateDraftAsync(
         UpdateRelease release,
         IDbTransaction? transaction = null,
@@ -249,13 +285,9 @@ LIMIT 1;";
             cancellationToken,
             async (connection, activeTransaction) =>
             {
-                var parameters = CreateWriteParameters(
-                    release,
-                    ReleaseStatus.Draft);
-
                 var insertCommand = CreateCommand(
                     CreateDraftSql,
-                    parameters,
+                    CreateWriteParameters(release, ReleaseStatus.Draft),
                     activeTransaction,
                     cancellationToken);
 
@@ -374,22 +406,20 @@ LIMIT 1;";
             cancellationToken,
             async (connection, activeTransaction) =>
             {
-                var parameters = new
-                {
-                    ProductCode = productCode,
-                    Channel = channel,
-                    OperatingSystem = operatingSystem,
-                    RequestedArchitecture = requestedArchitecture,
-                    AnyArchitecture = ArtifactArchitectures.Any,
-                    PackageType = packageType,
-                    ActiveProductStatus = (int)ProductStatus.Active,
-                    PublishedStatus = (int)ReleaseStatus.Published,
-                    ActiveArtifactStatus = (int)ArtifactStatus.Active
-                };
-
                 var command = CreateCommand(
                     FindLatestCompatibleSql,
-                    parameters,
+                    new
+                    {
+                        ProductCode = productCode,
+                        Channel = channel,
+                        OperatingSystem = operatingSystem,
+                        RequestedArchitecture = requestedArchitecture,
+                        AnyArchitecture = ArtifactArchitectures.Any,
+                        PackageType = packageType,
+                        ActiveProductStatus = (int)ProductStatus.Active,
+                        PublishedStatus = (int)ReleaseStatus.Published,
+                        ActiveArtifactStatus = (int)ArtifactStatus.Active
+                    },
                     activeTransaction,
                     cancellationToken);
 
