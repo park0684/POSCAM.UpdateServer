@@ -25,7 +25,7 @@ internal sealed class FakeUpdateProductRepository : IUpdateProductRepository
     {
         IReadOnlyList<UpdateProduct> result = Product is null
             ? Array.Empty<UpdateProduct>()
-            : new[] { Product };
+            : new[] { Product! };
 
         return Task.FromResult(result);
     }
