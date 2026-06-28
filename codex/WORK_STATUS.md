@@ -6,8 +6,8 @@
 | B01 | 기본 프로젝트 | Completed | Release 성공 | 5/5 성공 | solution, API 기반, Options, Middleware, tests, appsettings, csproj | 사용자 로컬 검증 완료 |
 | B02 | 도메인·버전 | Completed | Release 성공 | B03 포함 94/94 성공 | Domain, Enums, Entities, 도메인 테스트, B02 보고서 | 사용자 로컬 검증 완료 |
 | B03 | DB 계층 | Completed | Release 성공 | B02 포함 94/94 성공 | Database, Repositories, SQL tests, DI, appsettings, B03 보고서 | 사용자 로컬 검증 완료 |
-| B04 | 공개 Update Check | InProgress | 로컬 검증 필요 | 로컬 검증 필요 | DTO, Service, Controller, Repository 보완, tests, B04 보고서 | feature/initial-update-server 반영 완료 |
-| B05 | 관리자 인증 | Pending | - | - | - | A05 완료 |
+| B04 | 공개 Update Check | Completed | Release 성공 | 120/120 성공 | DTO, Service, Controller, Repository 보완, tests, B04 보고서 | 사용자 로컬 검증 완료 |
+| B05 | 관리자 인증 | InProgress | 로컬 검증 필요 | 로컬 검증 필요 | AuthServer Client, admin Middleware, Actor Accessor, DI, tests, B05 보고서 | A05 계약 기준 구현 완료 |
 | B06 | 릴리스 관리 | Pending | - | - | - | - |
 | B07 | Artifact 업로드 | Pending | - | - | - | - |
 | B08 | 게시·감사 | Pending | - | - | - | - |
