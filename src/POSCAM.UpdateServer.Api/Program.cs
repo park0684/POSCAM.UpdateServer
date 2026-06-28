@@ -5,6 +5,7 @@ using POSCAM.UpdateServer.Api.Infrastructure.Database;
 using POSCAM.UpdateServer.Api.Infrastructure.Middleware;
 using POSCAM.UpdateServer.Api.Options;
 using POSCAM.UpdateServer.Api.Repositories;
+using POSCAM.UpdateServer.Api.Services;
 
 var builder = WebApplication.CreateBuilder(args);
 
@@ -50,6 +51,7 @@ builder.Services.AddScoped<IUpdateProductRepository, UpdateProductRepository>();
 builder.Services.AddScoped<IUpdateReleaseRepository, UpdateReleaseRepository>();
 builder.Services.AddScoped<IUpdateArtifactRepository, UpdateArtifactRepository>();
 builder.Services.AddScoped<IUpdateAuditLogRepository, UpdateAuditLogRepository>();
+builder.Services.AddScoped<IUpdateCheckService, UpdateCheckService>();
 
 builder.Services
     .AddHealthChecks()
