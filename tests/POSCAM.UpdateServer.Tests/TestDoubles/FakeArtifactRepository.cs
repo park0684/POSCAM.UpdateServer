@@ -104,7 +104,37 @@ internal sealed class FakeArtifactRepository : IUpdateArtifactRepository
             return Task.FromResult(false);
         }
 
-        artifact.ArtifactStatus = status;
+        var saved = Clone(artifact);
+        saved.ArtifactStatus = status;
+        saved.UpdatedAt = DateTime.UtcNow;
+
+        Artifacts = Artifacts
+            .Where(x => x.ArtifactCode != artifactCode)
+            .Append(saved)
+            .ToArray();
+
         return Task.FromResult(true);
+    }
+
+    private static UpdateArtifact Clone(UpdateArtifact artifact)
+    {
+        return new UpdateArtifact
+        {
+            ArtifactCode = artifact.ArtifactCode,
+            ReleaseCode = artifact.ReleaseCode,
+            PublicId = artifact.PublicId,
+            OperatingSystem = artifact.OperatingSystem,
+            Architecture = artifact.Architecture,
+            PackageType = artifact.PackageType,
+            FileName = artifact.FileName,
+            StorageKey = artifact.StorageKey,
+            ContentType = artifact.ContentType,
+            FileSize = artifact.FileSize,
+            Sha256 = artifact.Sha256,
+            Signature = artifact.Signature,
+            ArtifactStatus = artifact.ArtifactStatus,
+            CreatedAt = artifact.CreatedAt,
+            UpdatedAt = artifact.UpdatedAt
+        };
     }
 }
