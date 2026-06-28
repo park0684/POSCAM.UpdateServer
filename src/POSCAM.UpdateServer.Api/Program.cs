@@ -2,6 +2,7 @@ using System.Text.Json;
 using Microsoft.AspNetCore.Diagnostics.HealthChecks;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.Extensions.Diagnostics.HealthChecks;
+using POSCAM.UpdateServer.Api.Authorization;
 using POSCAM.UpdateServer.Api.Infrastructure.Database;
 using POSCAM.UpdateServer.Api.Infrastructure.Middleware;
 using POSCAM.UpdateServer.Api.Models.Common;
@@ -52,8 +53,7 @@ builder.Services
 
 builder.Services
     .AddOptions<AuthServerOptions>()
-    .Bind(builder.Configuration.GetSection(AuthServerOptions.SectionName))
-    .ValidateDataAnnotations();
+    .Bind(builder.Configuration.GetSection(AuthServerOptions.SectionName));
 
 builder.Services
     .AddOptions<AdminWebCorsOptions>()
@@ -72,6 +72,13 @@ builder.Services.AddScoped<IUpdateArtifactRepository, UpdateArtifactRepository>(
 builder.Services.AddScoped<IUpdateAuditLogRepository, UpdateAuditLogRepository>();
 builder.Services.AddScoped<IUpdateCheckService, UpdateCheckService>();
 
+builder.Services.AddScoped<IUpdateManagementActorAccessor, UpdateManagementActorAccessor>();
+builder.Services
+    .AddHttpClient<IUpdateManagementAuthorizationClient, UpdateManagementAuthorizationClient>(client =>
+    {
+        client.Timeout = Timeout.InfiniteTimeSpan;
+    });
+
 builder.Services
     .AddHealthChecks()
     .AddCheck(
@@ -83,6 +90,7 @@ var app = builder.Build();
 
 app.UseMiddleware<RequestIdMiddleware>();
 app.UseMiddleware<GlobalExceptionHandlingMiddleware>();
+app.UseMiddleware<UpdateManagementAuthorizationMiddleware>();
 
 if (app.Environment.IsDevelopment())
 {
