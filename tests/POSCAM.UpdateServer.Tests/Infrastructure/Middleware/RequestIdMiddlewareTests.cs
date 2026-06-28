@@ -50,4 +50,38 @@ public class RequestIdMiddlewareTests
         Assert.NotEqual(new string('A', 101), context.TraceIdentifier);
         Assert.Equal(32, context.TraceIdentifier.Length);
     }
+
+    [Fact]
+    public async Task InvokeAsync_공백과_경로문자가_있는식별자는_교체한다()
+    {
+        var context = new DefaultHttpContext();
+        context.Request.Headers[RequestIdMiddleware.HeaderName] = "bad request/id";
+        var middleware = new RequestIdMiddleware(_ => Task.CompletedTask);
+
+        await middleware.InvokeAsync(context);
+
+        Assert.NotEqual("bad request/id", context.TraceIdentifier);
+        Assert.Equal(32, context.TraceIdentifier.Length);
+    }
+
+    [Theory]
+    [InlineData("abc123")]
+    [InlineData("request-id_01")]
+    [InlineData("update.2026:01")]
+    public void IsSafeRequestId_안전한값을_허용한다(string requestId)
+    {
+        Assert.True(RequestIdMiddleware.IsSafeRequestId(requestId));
+    }
+
+    [Theory]
+    [InlineData("")]
+    [InlineData(" ")]
+    [InlineData("bad request")]
+    [InlineData("bad/request")]
+    [InlineData("bad\\request")]
+    [InlineData("bad\r\nrequest")]
+    public void IsSafeRequestId_로그주입가능값을_거부한다(string requestId)
+    {
+        Assert.False(RequestIdMiddleware.IsSafeRequestId(requestId));
+    }
 }
