@@ -1,4 +1,5 @@
 using System.Data;
+using POSCAM.UpdateServer.Api.Models.Authorization;
 using POSCAM.UpdateServer.Api.Models.Common;
 using POSCAM.UpdateServer.Api.Models.Domain;
 using POSCAM.UpdateServer.Api.Models.Dtos.Admin.Releases;
@@ -200,7 +201,7 @@ public sealed partial class ReleaseManagementService
     }
 
     private AdminServiceResult<T>? RequireActor<T>(
-        out Models.Authorization.UpdateManagementActor? actor)
+        out UpdateManagementActor? actor)
     {
         actor = _actorAccessor.Actor;
 
