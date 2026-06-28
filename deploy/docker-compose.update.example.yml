@@ -22,8 +22,9 @@ services:
       AuthServer__InternalServiceKey: ${UPDATE_INTERNAL_SERVICE_KEY}
       AuthServer__TimeoutSeconds: 5
       Cors__AdminWebOrigins__0: https://accli.poscam.co.kr
-      ForwardedHeaders__KnownProxies__0: ${UPDATE_TRUSTED_PROXY_IP}
-      ForwardedHeaders__ForwardLimit: 1
+      ForwardedHeaders__KnownProxies__0: ${UPDATE_NGINX_PROXY_IP}
+      ForwardedHeaders__KnownProxies__1: ${UPDATE_IIS_PROXY_IP}
+      ForwardedHeaders__ForwardLimit: 2
       RateLimiting__UpdateCheckPermitLimit: 60
       RateLimiting__UpdateCheckWindowSeconds: 60
     ports:
