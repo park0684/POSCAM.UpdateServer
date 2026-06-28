@@ -4,5 +4,6 @@ public enum ArtifactStorageFailureType
 {
     InvalidPackage = 1,
     FileTooLarge = 2,
-    StorageError = 3
+    StorageError = 3,
+    PackageIntegrityError = 4
 }
