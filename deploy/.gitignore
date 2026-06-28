@@ -1,0 +1,7 @@
+# 실제 운영·개발 환경값은 Git에 커밋하지 않는다.
+update-server.env
+.env
+.env.*
+
+# 배포 예제는 계속 추적한다.
+!update-server.env.example
