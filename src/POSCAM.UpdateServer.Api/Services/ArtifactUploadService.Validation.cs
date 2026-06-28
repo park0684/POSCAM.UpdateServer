@@ -78,8 +78,9 @@ public sealed partial class ArtifactUploadService
                 "업로드 파일 크기 제한을 초과했습니다.");
         }
 
-        if (!string.Equals(
-                Path.GetExtension(request.File.FileName),
+        var originalFileName = request.File.FileName;
+        if (string.IsNullOrWhiteSpace(originalFileName)
+            || !originalFileName.EndsWith(
                 ".zip",
                 StringComparison.OrdinalIgnoreCase))
         {
