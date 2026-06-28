@@ -224,11 +224,13 @@ builder.Services
     .AddCheck<DatabaseReadyHealthCheck>(
         "database",
         failureStatus: HealthStatus.Unhealthy,
-        tags: new[] { "ready" })
+        tags: new[] { "ready" },
+        timeout: TimeSpan.FromSeconds(5))
     .AddCheck<StorageReadyHealthCheck>(
         "storage",
         failureStatus: HealthStatus.Unhealthy,
-        tags: new[] { "ready" });
+        tags: new[] { "ready" },
+        timeout: TimeSpan.FromSeconds(5));
 
 var app = builder.Build();
 
