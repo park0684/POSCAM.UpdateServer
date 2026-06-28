@@ -37,7 +37,7 @@ public class AuditQueryServiceTests
         Assert.NotNull(result.Data);
         Assert.Single(result.Data.Items);
         Assert.Equal(3, result.Data.TotalPages);
-        Assert.Equal(51, result.Data.TotalCount);
+        Assert.Equal(51L, result.Data.TotalCount);
 
         var criteria = repository.LastCriteria!;
         Assert.Equal(AuditActions.Publish, criteria.Action);
@@ -133,7 +133,7 @@ public class AuditQueryServiceTests
             });
 
         Assert.True(result.Success);
-        Assert.Equal(10, repository.LastReleaseCode);
+        Assert.Equal(10L, repository.LastReleaseCode);
         Assert.Equal(AuditActions.Disable, repository.LastReleaseAction);
         Assert.Equal(5, repository.LastOffset);
         Assert.Equal(5, repository.LastPageSize);
