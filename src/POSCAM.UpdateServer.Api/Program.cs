@@ -1,44 +1,80 @@
+using System.Text.Json;
+using Microsoft.AspNetCore.Diagnostics.HealthChecks;
+using Microsoft.Extensions.Diagnostics.HealthChecks;
+using POSCAM.UpdateServer.Api.Infrastructure.Middleware;
+using POSCAM.UpdateServer.Api.Options;
+
 var builder = WebApplication.CreateBuilder(args);
 
-// Add services to the container.
-// Learn more about configuring Swagger/OpenAPI at https://aka.ms/aspnetcore/swashbuckle
+builder.Services
+    .AddControllers()
+    .AddJsonOptions(options =>
+    {
+        options.JsonSerializerOptions.PropertyNamingPolicy = JsonNamingPolicy.CamelCase;
+        options.JsonSerializerOptions.DictionaryKeyPolicy = JsonNamingPolicy.CamelCase;
+    });
+
 builder.Services.AddEndpointsApiExplorer();
 builder.Services.AddSwaggerGen();
 
+builder.Services
+    .AddOptions<UpdateStorageOptions>()
+    .Bind(builder.Configuration.GetSection(UpdateStorageOptions.SectionName))
+    .ValidateDataAnnotations()
+    .Validate(
+        options =>
+            Uri.TryCreate(options.PublicBaseUrl, UriKind.Absolute, out var uri)
+            && (uri.Scheme == Uri.UriSchemeHttp || uri.Scheme == Uri.UriSchemeHttps),
+        "UpdateStorage:PublicBaseUrl은 유효한 HTTP 또는 HTTPS 절대 URL이어야 합니다.")
+    .ValidateOnStart();
+
+builder.Services
+    .AddOptions<AuthServerOptions>()
+    .Bind(builder.Configuration.GetSection(AuthServerOptions.SectionName))
+    .ValidateDataAnnotations();
+
+builder.Services
+    .AddOptions<AdminWebCorsOptions>()
+    .Bind(builder.Configuration.GetSection(AdminWebCorsOptions.SectionName));
+
+builder.Services
+    .AddOptions<UpdateCheckRateLimitingOptions>()
+    .Bind(builder.Configuration.GetSection(UpdateCheckRateLimitingOptions.SectionName))
+    .ValidateDataAnnotations()
+    .ValidateOnStart();
+
+builder.Services
+    .AddHealthChecks()
+    .AddCheck(
+        "self",
+        () => HealthCheckResult.Healthy(),
+        tags: new[] { "live" });
+
 var app = builder.Build();
 
-// Configure the HTTP request pipeline.
+app.UseMiddleware<RequestIdMiddleware>();
+app.UseMiddleware<GlobalExceptionHandlingMiddleware>();
+
 if (app.Environment.IsDevelopment())
 {
     app.UseSwagger();
     app.UseSwaggerUI();
 }
 
-app.UseHttpsRedirection();
+app.MapControllers();
 
-var summaries = new[]
-{
-    "Freezing", "Bracing", "Chilly", "Cool", "Mild", "Warm", "Balmy", "Hot", "Sweltering", "Scorching"
-};
-
-app.MapGet("/weatherforecast", () =>
-{
-    var forecast = Enumerable.Range(1, 5).Select(index =>
-        new WeatherForecast
-        (
-            DateOnly.FromDateTime(DateTime.Now.AddDays(index)),
-            Random.Shared.Next(-20, 55),
-            summaries[Random.Shared.Next(summaries.Length)]
-        ))
-        .ToArray();
-    return forecast;
-})
-.WithName("GetWeatherForecast")
-.WithOpenApi();
+app.MapHealthChecks(
+    "/health/live",
+    new HealthCheckOptions
+    {
+        Predicate = registration => registration.Tags.Contains("live")
+    });
 
 app.Run();
 
-internal record WeatherForecast(DateOnly Date, int TemperatureC, string? Summary)
+/// <summary>
+/// 통합 테스트에서 WebApplicationFactory가 진입점을 참조할 수 있도록 공개한다.
+/// </summary>
+public partial class Program
 {
-    public int TemperatureF => 32 + (int)(TemperatureC / 0.5556);
 }
