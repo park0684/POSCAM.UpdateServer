@@ -245,7 +245,14 @@ public sealed class UpdateManagementAuthorizationClient
                 baseUrl.TrimEnd('/') + "/",
                 UriKind.Absolute,
                 out var baseUri)
-            || baseUri.Scheme is not (Uri.UriSchemeHttp or Uri.UriSchemeHttps))
+            || (!string.Equals(
+                    baseUri.Scheme,
+                    Uri.UriSchemeHttp,
+                    StringComparison.OrdinalIgnoreCase)
+                && !string.Equals(
+                    baseUri.Scheme,
+                    Uri.UriSchemeHttps,
+                    StringComparison.OrdinalIgnoreCase)))
         {
             return false;
         }
