@@ -59,11 +59,15 @@ public sealed class UpdateManagementAuthorizationMiddleware
             ? result.Message
             : "관리자 권한 확인 서비스를 사용할 수 없습니다.";
 
+        var requestId = context.TraceIdentifier;
+
         context.Response.Clear();
         context.Response.StatusCode = httpStatusCode;
         context.Response.ContentType = "application/json; charset=utf-8";
+        context.Response.Headers[RequestIdMiddleware.HeaderName] = requestId;
         context.Response.Headers["Cache-Control"] = "no-store";
         context.Response.Headers["Pragma"] = "no-cache";
+        context.Response.Headers["Expires"] = "0";
 
         var response = ApiResponse<object?>.Fail(
             errorCode,
