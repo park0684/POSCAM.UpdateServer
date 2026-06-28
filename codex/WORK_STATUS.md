@@ -11,7 +11,7 @@
 | B06 | 릴리스 관리 | Completed | Release 성공, 경고 0 | 172/172 성공 | DTO, Service, Controller, 관리 조회 Repository, 감사, tests, B06 보고서 | 사용자 로컬 검증 완료 |
 | B07 | Artifact 업로드 | Completed | Release 성공, 경고 0 | 215/215 성공 | Storage, ZIP Validator, Upload Service·Controller, Artifact 잠금 조회, tests, B07 보고서 | 사용자 로컬 검증 완료 |
 | B08 | 게시·감사 | Completed | Release 성공, 경고 0 | 257/257 성공 | Publish·Disable·Quarantine·Audit API, Storage 재검증·격리, tests, B08 보고서 | 사용자 로컬 검증 완료 |
-| B09 | 운영 기능 | Pending | - | - | - | - |
+| B09 | 운영 기능 | InProgress | 로컬 검증 필요 | 로컬 검증 필요 | Rate Limit, 제한 CORS, live·ready, Forwarded Headers, Request 로그, Dockerfile, tests | 구현 완료, feature/initial-update-server 반영 |
 | B10 | 최종 검증 | Pending | - | - | - | - |
 
 상태값: `Pending`, `InProgress`, `Completed`, `Blocked`
