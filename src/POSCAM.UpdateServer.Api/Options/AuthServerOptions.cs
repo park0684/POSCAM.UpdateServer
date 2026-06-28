@@ -14,4 +14,7 @@ public sealed class AuthServerOptions
     public string BaseUrl { get; set; } = "http://poscam-auth-api:8080";
 
     public string InternalServiceKey { get; set; } = string.Empty;
+
+    [Range(1, 30)]
+    public int TimeoutSeconds { get; set; } = 5;
 }
