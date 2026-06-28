@@ -1,5 +1,6 @@
 using System.Text.Json;
 using Microsoft.AspNetCore.Diagnostics.HealthChecks;
+using Microsoft.AspNetCore.Http.Features;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.Extensions.Diagnostics.HealthChecks;
 using POSCAM.UpdateServer.Api.Authorization;
@@ -10,8 +11,25 @@ using POSCAM.UpdateServer.Api.Models.Enums;
 using POSCAM.UpdateServer.Api.Options;
 using POSCAM.UpdateServer.Api.Repositories;
 using POSCAM.UpdateServer.Api.Services;
+using POSCAM.UpdateServer.Api.Storage;
 
 var builder = WebApplication.CreateBuilder(args);
+
+var configuredMaxUploadBytes = builder.Configuration.GetValue<long?>(
+    $"{UpdateStorageOptions.SectionName}:MaxUploadBytes") ?? 1_073_741_824L;
+var multipartRequestLimit = configuredMaxUploadBytes <= long.MaxValue - 1_048_576L
+    ? configuredMaxUploadBytes + 1_048_576L
+    : configuredMaxUploadBytes;
+
+builder.WebHost.ConfigureKestrel(options =>
+{
+    options.Limits.MaxRequestBodySize = multipartRequestLimit;
+});
+
+builder.Services.Configure<FormOptions>(options =>
+{
+    options.MultipartBodyLengthLimit = multipartRequestLimit;
+});
 
 builder.Services
     .AddControllers()
@@ -31,7 +49,7 @@ builder.Services.Configure<ApiBehaviorOptions>(options =>
 
         var response = ApiResponse<object?>.Fail(
             UpdateErrorCode.ValidationError,
-            "요청 JSON 형식이 올바르지 않습니다.");
+            "요청 형식이 올바르지 않습니다.");
 
         return new BadRequestObjectResult(response);
     };
@@ -71,9 +89,13 @@ builder.Services.AddScoped<IUpdateProductRepository, UpdateProductRepository>();
 builder.Services.AddScoped<IUpdateReleaseRepository, UpdateReleaseRepository>();
 builder.Services.AddScoped<IReleaseManagementQueryRepository, ReleaseManagementQueryRepository>();
 builder.Services.AddScoped<IUpdateArtifactRepository, UpdateArtifactRepository>();
+builder.Services.AddScoped<IArtifactManagementQueryRepository, ArtifactManagementQueryRepository>();
 builder.Services.AddScoped<IUpdateAuditLogRepository, UpdateAuditLogRepository>();
 builder.Services.AddScoped<IUpdateCheckService, UpdateCheckService>();
 builder.Services.AddScoped<IReleaseManagementService, ReleaseManagementService>();
+builder.Services.AddScoped<IArtifactUploadService, ArtifactUploadService>();
+builder.Services.AddSingleton<IZipPackageValidator, ZipPackageValidator>();
+builder.Services.AddSingleton<IArtifactStorageService, ArtifactStorageService>();
 
 builder.Services.AddScoped<IUpdateManagementActorAccessor, UpdateManagementActorAccessor>();
 builder.Services
