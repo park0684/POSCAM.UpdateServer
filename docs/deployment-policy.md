@@ -27,9 +27,10 @@ Forwarded Headers
 → Controller
 ```
 
-- Forwarded Headers는 운영자가 확인한 단일 프록시 IP만 신뢰한다.
-- `ForwardLimit` 기본값은 1이다.
-- `0.0.0.0`, `::`, 전체 네트워크 신뢰는 사용하지 않는다.
+- Forwarded Headers는 운영자가 확인한 정확한 프록시 IP만 신뢰한다.
+- 현재 배포 경로는 IIS와 Ubuntu Nginx의 2단계이므로 두 IP를 모두 등록하고 `ForwardLimit=2`를 사용한다.
+- Nginx는 IIS가 전달한 기존 X-Forwarded-For를 보존해 실제 Client IP 체인을 UpdateServer에 전달한다.
+- `0.0.0.0`, `::`, 전체 네트워크 또는 광범위한 CIDR 신뢰는 사용하지 않는다.
 - Request 로그는 Method, Path, Status, 처리시간, Request ID, Remote IP만 포함한다.
 - Authorization, Cookie, X-POSCAM-Service-Key 값은 기록하지 않는다.
 
@@ -37,6 +38,7 @@ Forwarded Headers
 
 - `Cors:AdminWebOrigins`에 등록한 정확한 Origin만 허용한다.
 - `AllowAnyOrigin`을 사용하지 않는다.
+- 운영 Origin은 HTTPS만 허용한다.
 - 허용 Method: GET, POST, PUT, DELETE, OPTIONS
 - 허용 Header: Authorization, Content-Type, X-Request-ID
 - 노출 Header: X-Request-ID
@@ -46,7 +48,7 @@ Forwarded Headers
 ## Rate Limit
 
 - 대상: `POST /api/v1/updates/check`
-- 기준: Forwarded Headers 적용 후 Remote IP
+- 기준: 신뢰된 IIS·Nginx Forwarded Headers를 적용한 뒤의 실제 Client IP
 - 기본값: IP별 60회/60초
 - Queue: 없음
 - 초과 응답: HTTP 429, ErrorCode 9004
