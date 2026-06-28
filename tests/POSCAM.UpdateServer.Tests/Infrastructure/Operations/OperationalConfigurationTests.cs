@@ -92,7 +92,7 @@ public class OperationalConfigurationTests
         OperationalConfiguration.ApplyForwardedHeaders(target, source);
 
         Assert.Equal(2, target.ForwardLimit);
-        Assert.True(target.RequireHeaderSymmetry);
+        Assert.False(target.RequireHeaderSymmetry);
         Assert.True(
             target.ForwardedHeaders.HasFlag(ForwardedHeaders.XForwardedFor));
         Assert.True(
