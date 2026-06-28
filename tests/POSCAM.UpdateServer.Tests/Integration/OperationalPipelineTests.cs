@@ -6,8 +6,10 @@ using Microsoft.AspNetCore.TestHost;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.DependencyInjection.Extensions;
+using POSCAM.UpdateServer.Api.Authorization;
 using POSCAM.UpdateServer.Api.Models.Domain;
 using POSCAM.UpdateServer.Api.Models.Dtos.Updates;
+using POSCAM.UpdateServer.Api.Models.Enums;
 using POSCAM.UpdateServer.Api.Services;
 
 namespace POSCAM.UpdateServer.Tests.Integration;
@@ -33,6 +35,7 @@ public class OperationalPipelineTests
                     ',',
                     response.Headers.GetValues("Access-Control-Allow-Headers"))
                 .ToLowerInvariant());
+        Assert.Equal(0, factory.AuthorizationClient.CallCount);
     }
 
     [Fact]
@@ -46,6 +49,7 @@ public class OperationalPipelineTests
 
         Assert.False(response.Headers.Contains("Access-Control-Allow-Origin"));
         Assert.False(response.Headers.Contains("Access-Control-Allow-Credentials"));
+        Assert.Equal(0, factory.AuthorizationClient.CallCount);
     }
 
     [Fact]
@@ -99,6 +103,28 @@ public class OperationalPipelineTests
 
         Assert.NotEqual("bad request id", responseRequestId);
         Assert.Equal(32, responseRequestId.Length);
+    }
+
+    [Fact]
+    public async Task 관리자_인증실패응답에도_RequestId가_보존된다()
+    {
+        using var factory = new OperationalWebApplicationFactory();
+        using var client = factory.CreateClient();
+        using var request = new HttpRequestMessage(
+            HttpMethod.Get,
+            "/api/v1/admin/products/active");
+        request.Headers.Add("X-Request-ID", "admin-auth-failure-01");
+
+        using var response = await client.SendAsync(request);
+        var body = await response.Content.ReadAsStringAsync();
+
+        Assert.Equal(HttpStatusCode.Unauthorized, response.StatusCode);
+        Assert.Equal(
+            "admin-auth-failure-01",
+            Assert.Single(response.Headers.GetValues("X-Request-ID")));
+        Assert.Equal("no-store", response.Headers.CacheControl?.ToString());
+        Assert.Contains("\"errorCode\":5004", body, StringComparison.Ordinal);
+        Assert.Equal(1, factory.AuthorizationClient.CallCount);
     }
 
     [Fact]
@@ -181,6 +207,8 @@ public class OperationalPipelineTests
             "poscam-update-operational-tests",
             Guid.NewGuid().ToString("N"));
 
+        public DenyingAuthorizationClient AuthorizationClient { get; } = new();
+
         protected override void ConfigureWebHost(IWebHostBuilder builder)
         {
             builder.UseEnvironment("Development");
@@ -210,6 +238,10 @@ public class OperationalPipelineTests
                 services.RemoveAll<IUpdateCheckService>();
                 services.AddSingleton<IUpdateCheckService>(
                     new SuccessfulUpdateCheckService());
+
+                services.RemoveAll<IUpdateManagementAuthorizationClient>();
+                services.AddSingleton<IUpdateManagementAuthorizationClient>(
+                    AuthorizationClient);
             });
         }
 
@@ -256,6 +288,26 @@ public class OperationalPipelineTests
                         Architecture = request?.Architecture
                                        ?? ArtifactArchitectures.X86
                     }));
+        }
+    }
+
+    private sealed class DenyingAuthorizationClient
+        : IUpdateManagementAuthorizationClient
+    {
+        public int CallCount { get; private set; }
+
+        public Task<UpdateManagementAuthorizationResult> AuthorizeAsync(
+            string? authorizationHeader,
+            string? requestId,
+            CancellationToken cancellationToken = default)
+        {
+            CallCount++;
+
+            return Task.FromResult(
+                UpdateManagementAuthorizationResult.Deny(
+                    StatusCodes.Status401Unauthorized,
+                    UpdateErrorCode.TokenInvalid,
+                    "로그인 토큰이 유효하지 않습니다."));
         }
     }
 }
