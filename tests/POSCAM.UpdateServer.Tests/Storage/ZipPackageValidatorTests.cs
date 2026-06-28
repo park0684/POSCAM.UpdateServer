@@ -144,7 +144,11 @@ public class ZipPackageValidatorTests
         {
             var entry = archive.CreateEntry(item.Name, CompressionLevel.Fastest);
             using var stream = entry.Open();
-            using var writer = new StreamWriter(stream, Encoding.UTF8, leaveOpen: false);
+            using var writer = new StreamWriter(
+                stream,
+                Encoding.UTF8,
+                bufferSize: 1024,
+                leaveOpen: false);
             writer.Write(item.Content);
         }
 
