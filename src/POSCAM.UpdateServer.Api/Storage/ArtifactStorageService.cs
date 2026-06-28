@@ -214,12 +214,7 @@ public sealed partial class ArtifactStorageService : IArtifactStorageService
 
             Directory.CreateDirectory(parentDirectory);
             File.Move(stagedFile.PhysicalPath, finalPath, overwrite: false);
-            cancellationToken.ThrowIfCancellationRequested();
             return Task.CompletedTask;
-        }
-        catch (OperationCanceledException)
-        {
-            throw;
         }
         catch (ArtifactStorageException)
         {
@@ -284,8 +279,8 @@ public sealed partial class ArtifactStorageService : IArtifactStorageService
             File.Delete(sourcePath);
             return Task.FromResult(true);
         }
-        catch (Exception deleteException)
-            when (deleteException is IOException or UnauthorizedAccessException)
+        catch (Exception exception)
+            when (exception is IOException or UnauthorizedAccessException)
         {
             try
             {
@@ -348,8 +343,7 @@ public sealed partial class ArtifactStorageService : IArtifactStorageService
             '/',
             StringSplitOptions.RemoveEmptyEntries);
 
-        if (segments.Length == 0
-            || segments.Any(segment => segment is "." or ".." || segment.Contains('\0')))
+        if (segments.Length == 0 || segments.Any(IsInvalidStorageSegment))
         {
             throw StorageError("Storage Key가 올바르지 않습니다.");
         }
@@ -363,6 +357,13 @@ public sealed partial class ArtifactStorageService : IArtifactStorageService
         var fullPath = Path.GetFullPath(combined);
         EnsurePathInside(rootDirectory, fullPath);
         return fullPath;
+    }
+
+    private static bool IsInvalidStorageSegment(string segment)
+    {
+        return segment is "." or ".."
+               || segment.Contains('\0')
+               || segment.Contains(':');
     }
 
     private static string ResolveChildPath(
