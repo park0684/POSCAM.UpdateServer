@@ -12,4 +12,9 @@ public interface IArtifactManagementQueryRepository
         string packageType,
         IDbTransaction transaction,
         CancellationToken cancellationToken = default);
+
+    Task<UpdateArtifact?> GetByCodeForUpdateAsync(
+        long artifactCode,
+        IDbTransaction transaction,
+        CancellationToken cancellationToken = default);
 }
