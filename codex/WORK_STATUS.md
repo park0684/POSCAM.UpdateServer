@@ -12,6 +12,6 @@
 | B07 | Artifact 업로드 | Completed | Release 성공, 경고 0 | 215/215 성공 | Storage, ZIP Validator, Upload Service·Controller, Artifact 잠금 조회, tests, B07 보고서 | 사용자 로컬 검증 완료 |
 | B08 | 게시·감사 | Completed | Release 성공, 경고 0 | 257/257 성공 | Publish·Disable·Quarantine·Audit API, Storage 재검증·격리, tests, B08 보고서 | 사용자 로컬 검증 완료 |
 | B09 | 운영 기능 | Completed | Release 성공, 경고 0 | 293/293 성공 | Rate Limit, 제한 CORS, live·ready, Forwarded Headers, Request 로그, Dockerfile, tests | 사용자 로컬 검증 완료 |
-| B10 | 최종 검증 | Pending | - | - | - | - |
+| B10 | 최종 검증 | InProgress | 로컬 검증 필요 | 로컬 검증 필요 | ZIP 디렉터리 Entry 검증, deploy Secret ignore, B10 보고서 | 정적 검토 완료, feature/initial-update-server 반영 |
 
 상태값: `Pending`, `InProgress`, `Completed`, `Blocked`
