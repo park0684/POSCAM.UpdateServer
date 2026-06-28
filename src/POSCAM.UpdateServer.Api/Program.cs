@@ -1,8 +1,11 @@
 using System.Text.Json;
 using Microsoft.AspNetCore.Diagnostics.HealthChecks;
+using Microsoft.AspNetCore.Mvc;
 using Microsoft.Extensions.Diagnostics.HealthChecks;
 using POSCAM.UpdateServer.Api.Infrastructure.Database;
 using POSCAM.UpdateServer.Api.Infrastructure.Middleware;
+using POSCAM.UpdateServer.Api.Models.Common;
+using POSCAM.UpdateServer.Api.Models.Enums;
 using POSCAM.UpdateServer.Api.Options;
 using POSCAM.UpdateServer.Api.Repositories;
 using POSCAM.UpdateServer.Api.Services;
@@ -16,6 +19,22 @@ builder.Services
         options.JsonSerializerOptions.PropertyNamingPolicy = JsonNamingPolicy.CamelCase;
         options.JsonSerializerOptions.DictionaryKeyPolicy = JsonNamingPolicy.CamelCase;
     });
+
+builder.Services.Configure<ApiBehaviorOptions>(options =>
+{
+    options.InvalidModelStateResponseFactory = context =>
+    {
+        context.HttpContext.Response.Headers["Cache-Control"] = "no-store";
+        context.HttpContext.Response.Headers["Pragma"] = "no-cache";
+        context.HttpContext.Response.Headers["Expires"] = "0";
+
+        var response = ApiResponse<object?>.Fail(
+            UpdateErrorCode.ValidationError,
+            "요청 JSON 형식이 올바르지 않습니다.");
+
+        return new BadRequestObjectResult(response);
+    };
+});
 
 builder.Services.AddEndpointsApiExplorer();
 builder.Services.AddSwaggerGen();
