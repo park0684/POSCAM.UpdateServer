@@ -67,7 +67,12 @@ public static class OperationalConfiguration
             ForwardedHeaders.XForwardedFor
             | ForwardedHeaders.XForwardedProto;
         target.ForwardLimit = source.ForwardLimit;
-        target.RequireHeaderSymmetry = true;
+
+        // IIS → Nginx의 2단계 체인에서는 X-Forwarded-For는 두 값이지만
+        // Nginx가 다시 설정하는 X-Forwarded-Proto는 한 값일 수 있다.
+        // 정확한 KnownProxies와 ForwardLimit을 신뢰 경계로 사용하므로
+        // Header 개수 대칭은 강제하지 않는다.
+        target.RequireHeaderSymmetry = false;
 
         foreach (var proxy in source.KnownProxies
                      .Where(value => !string.IsNullOrWhiteSpace(value))
