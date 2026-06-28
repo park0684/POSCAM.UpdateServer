@@ -17,6 +17,16 @@ public class ArtifactManagementQueryRepositorySqlTests
         Assert.DoesNotContain("poscam_auth", sql, StringComparison.OrdinalIgnoreCase);
     }
 
+    [Fact]
+    public void GetByCodeForUpdateSql_ArtifactCode와_FOR_UPDATE를_사용한다()
+    {
+        var sql = Normalize(ArtifactManagementQueryRepository.GetByCodeForUpdateSql);
+
+        Assert.Contains("art_code = @ArtifactCode", sql, StringComparison.OrdinalIgnoreCase);
+        Assert.EndsWith("FOR UPDATE;", sql, StringComparison.OrdinalIgnoreCase);
+        Assert.DoesNotContain("poscam_auth", sql, StringComparison.OrdinalIgnoreCase);
+    }
+
     private static string Normalize(string sql)
     {
         return string.Join(
