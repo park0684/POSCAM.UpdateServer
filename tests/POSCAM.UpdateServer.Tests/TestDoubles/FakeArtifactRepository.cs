@@ -8,6 +8,10 @@ namespace POSCAM.UpdateServer.Tests.TestDoubles;
 internal sealed class FakeArtifactRepository : IUpdateArtifactRepository
 {
     public IReadOnlyList<UpdateArtifact> Artifacts { get; set; } = Array.Empty<UpdateArtifact>();
+    public UpdateArtifact? LastCreatedArtifact { get; private set; }
+    public UpdateArtifact? LastReplacedArtifact { get; private set; }
+    public bool ReplaceResult { get; set; } = true;
+    public long CreatedArtifactCode { get; set; } = 200;
 
     public Task<UpdateArtifact?> GetByCodeAsync(
         long artifactCode,
@@ -33,7 +37,12 @@ internal sealed class FakeArtifactRepository : IUpdateArtifactRepository
         IDbTransaction? transaction = null,
         CancellationToken cancellationToken = default)
     {
-        return Task.FromResult<UpdateArtifact?>(null);
+        return Task.FromResult(
+            Artifacts.FirstOrDefault(x =>
+                x.ReleaseCode == releaseCode
+                && x.OperatingSystem == operatingSystem
+                && x.Architecture == architecture
+                && x.PackageType == packageType));
     }
 
     public Task<long> CreateAsync(
@@ -41,7 +50,10 @@ internal sealed class FakeArtifactRepository : IUpdateArtifactRepository
         IDbTransaction? transaction = null,
         CancellationToken cancellationToken = default)
     {
-        throw new NotSupportedException();
+        artifact.ArtifactCode = CreatedArtifactCode;
+        LastCreatedArtifact = artifact;
+        Artifacts = Artifacts.Append(artifact).ToArray();
+        return Task.FromResult(CreatedArtifactCode);
     }
 
     public Task<bool> ReplaceAsync(
@@ -49,7 +61,17 @@ internal sealed class FakeArtifactRepository : IUpdateArtifactRepository
         IDbTransaction? transaction = null,
         CancellationToken cancellationToken = default)
     {
-        throw new NotSupportedException();
+        LastReplacedArtifact = artifact;
+
+        if (ReplaceResult)
+        {
+            Artifacts = Artifacts
+                .Where(x => x.ArtifactCode != artifact.ArtifactCode)
+                .Append(artifact)
+                .ToArray();
+        }
+
+        return Task.FromResult(ReplaceResult);
     }
 
     public Task<bool> SetStatusAsync(
@@ -58,6 +80,13 @@ internal sealed class FakeArtifactRepository : IUpdateArtifactRepository
         IDbTransaction? transaction = null,
         CancellationToken cancellationToken = default)
     {
-        throw new NotSupportedException();
+        var artifact = Artifacts.FirstOrDefault(x => x.ArtifactCode == artifactCode);
+        if (artifact is null)
+        {
+            return Task.FromResult(false);
+        }
+
+        artifact.ArtifactStatus = status;
+        return Task.FromResult(true);
     }
 }
