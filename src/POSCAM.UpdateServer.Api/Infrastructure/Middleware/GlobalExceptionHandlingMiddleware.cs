@@ -1,3 +1,4 @@
+using POSCAM.UpdateServer.Api.Infrastructure.Database;
 using POSCAM.UpdateServer.Api.Models.Common;
 using POSCAM.UpdateServer.Api.Models.Enums;
 
@@ -35,6 +36,19 @@ public sealed class GlobalExceptionHandlingMiddleware
                 context.Request.Method,
                 context.Request.Path);
         }
+        catch (UpdateDatabaseException exception)
+        {
+            _logger.LogError(
+                "DB 작업 오류. RequestId: {RequestId}, FailureType: {FailureType}, ProviderErrorNumber: {ProviderErrorNumber}",
+                context.TraceIdentifier,
+                exception.FailureType,
+                exception.ProviderErrorNumber);
+
+            await WriteErrorAsync(
+                context,
+                UpdateErrorCode.DatabaseError,
+                "업데이트 데이터베이스 작업 중 오류가 발생했습니다.");
+        }
         catch (Exception exception)
         {
             _logger.LogError(
@@ -44,22 +58,31 @@ public sealed class GlobalExceptionHandlingMiddleware
                 context.Request.Method,
                 context.Request.Path);
 
-            if (context.Response.HasStarted)
-            {
-                throw;
-            }
-
-            context.Response.Clear();
-            context.Response.StatusCode = StatusCodes.Status500InternalServerError;
-            context.Response.ContentType = "application/json; charset=utf-8";
-
-            var response = ApiResponse<object?>.Fail(
+            await WriteErrorAsync(
+                context,
                 UpdateErrorCode.UnknownError,
                 "요청을 처리하는 중 서버 오류가 발생했습니다.");
-
-            await context.Response.WriteAsJsonAsync(
-                response,
-                cancellationToken: context.RequestAborted);
         }
+    }
+
+    private static async Task WriteErrorAsync(
+        HttpContext context,
+        UpdateErrorCode errorCode,
+        string message)
+    {
+        if (context.Response.HasStarted)
+        {
+            throw new InvalidOperationException("응답이 이미 시작되었습니다.");
+        }
+
+        context.Response.Clear();
+        context.Response.StatusCode = StatusCodes.Status500InternalServerError;
+        context.Response.ContentType = "application/json; charset=utf-8";
+
+        var response = ApiResponse<object?>.Fail(errorCode, message);
+
+        await context.Response.WriteAsJsonAsync(
+            response,
+            cancellationToken: context.RequestAborted);
     }
 }
