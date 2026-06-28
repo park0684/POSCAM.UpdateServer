@@ -1,4 +1,5 @@
 using System.Net;
+using Microsoft.AspNetCore.Builder;
 using Microsoft.AspNetCore.HttpOverrides;
 using POSCAM.UpdateServer.Api.Infrastructure.Operations;
 using POSCAM.UpdateServer.Api.Options;
