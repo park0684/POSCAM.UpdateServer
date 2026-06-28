@@ -47,9 +47,9 @@ public class UpdatesControllerTests
         Assert.Equal((int)UpdateErrorCode.None, response.ErrorCode);
         Assert.Same(responseData, response.Data);
         Assert.Same(request, fakeService.LastRequest);
-        Assert.Equal("no-store", controller.Response.Headers.CacheControl.ToString());
-        Assert.Equal("no-cache", controller.Response.Headers.Pragma.ToString());
-        Assert.Equal("0", controller.Response.Headers.Expires.ToString());
+        Assert.Equal("no-store", controller.Response.Headers["Cache-Control"].ToString());
+        Assert.Equal("no-cache", controller.Response.Headers["Pragma"].ToString());
+        Assert.Equal("0", controller.Response.Headers["Expires"].ToString());
     }
 
     [Fact]
