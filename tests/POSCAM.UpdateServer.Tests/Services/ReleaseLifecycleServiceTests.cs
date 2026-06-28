@@ -25,7 +25,7 @@ public class ReleaseLifecycleServiceTests
         Assert.True(result.Success);
         Assert.Equal(ReleaseStatus.Published, (ReleaseStatus)result.Data!.Status);
         Assert.NotNull(result.Data.PublishedAt);
-        Assert.Equal(10, fixture.ReleaseRepository.LastPublishedReleaseCode);
+        Assert.Equal(10L, fixture.ReleaseRepository.LastPublishedReleaseCode);
         Assert.Single(fixture.Storage.ValidatedStorageKeys);
         Assert.Equal(CreateArtifact().StorageKey, fixture.Storage.ValidatedStorageKeys[0]);
 
@@ -98,7 +98,7 @@ public class ReleaseLifecycleServiceTests
 
         Assert.True(result.Success);
         Assert.Equal(ReleaseStatus.Disabled, (ReleaseStatus)result.Data!.Status);
-        Assert.Equal(10, fixture.ReleaseRepository.LastDisabledReleaseCode);
+        Assert.Equal(10L, fixture.ReleaseRepository.LastDisabledReleaseCode);
         Assert.Empty(fixture.Storage.RemovedStorageKeys);
         Assert.Empty(fixture.Storage.QuarantinedStorageKeys);
 
@@ -193,7 +193,9 @@ public class ReleaseLifecycleServiceTests
         Assert.Equal(ReleaseStatus.Disabled, (ReleaseStatus)result.Data.ReleaseStatus);
         Assert.Null(fixture.ReleaseRepository.LastDisabledReleaseCode);
         Assert.Single(fixture.AuditRepository.CreatedLogs);
-        Assert.Contains("MISSING", fixture.AuditRepository.CreatedLogs[0].AfterData);
+        Assert.Contains(
+            "MISSING",
+            fixture.AuditRepository.CreatedLogs[0].AfterData ?? string.Empty);
     }
 
     [Fact]
