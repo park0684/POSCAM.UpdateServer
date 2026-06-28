@@ -24,6 +24,14 @@ public interface IUpdateArtifactRepository
         IDbTransaction? transaction = null,
         CancellationToken cancellationToken = default);
 
+    Task<UpdateArtifact?> GetByTargetForUpdateAsync(
+        long releaseCode,
+        string operatingSystem,
+        string architecture,
+        string packageType,
+        IDbTransaction transaction,
+        CancellationToken cancellationToken = default);
+
     Task<long> CreateAsync(
         UpdateArtifact artifact,
         IDbTransaction? transaction = null,
