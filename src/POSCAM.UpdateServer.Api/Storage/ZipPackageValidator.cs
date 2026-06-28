@@ -148,6 +148,7 @@ public sealed partial class ZipPackageValidator : IZipPackageValidator
         var normalized = entryPath.Replace('\\', '/');
 
         if (normalized.StartsWith("/", StringComparison.Ordinal)
+            || normalized.Contains(':')
             || WindowsDrivePathRegex().IsMatch(normalized)
             || Path.IsPathRooted(entryPath))
         {
