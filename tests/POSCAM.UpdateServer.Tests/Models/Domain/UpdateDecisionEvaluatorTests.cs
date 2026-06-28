@@ -140,7 +140,7 @@ public class UpdateDecisionEvaluatorTests
 
         Assert.True(success, $"릴리스 정책 생성 실패: {error}");
         Assert.NotNull(policy);
-        return policy;
+        return policy!;
     }
 
     private static UpdateVersion Parse(string value)
