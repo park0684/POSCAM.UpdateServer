@@ -19,6 +19,18 @@ public static class OperationalConfiguration
             .All(IsValidOrigin);
     }
 
+    public static bool AreHttpsOrigins(AdminWebCorsOptions options)
+    {
+        ArgumentNullException.ThrowIfNull(options);
+
+        var origins = GetNormalizedOrigins(options);
+
+        return origins.Length > 0
+               && origins.All(origin =>
+                   Uri.TryCreate(origin, UriKind.Absolute, out var uri)
+                   && uri.Scheme == Uri.UriSchemeHttps);
+    }
+
     public static string[] GetNormalizedOrigins(AdminWebCorsOptions options)
     {
         ArgumentNullException.ThrowIfNull(options);
@@ -81,6 +93,8 @@ public static class OperationalConfiguration
         if (!Uri.TryCreate(options.BaseUrl, UriKind.Absolute, out var uri)
             || (uri.Scheme != Uri.UriSchemeHttp
                 && uri.Scheme != Uri.UriSchemeHttps)
+            || string.IsNullOrWhiteSpace(uri.Host)
+            || !string.IsNullOrEmpty(uri.UserInfo)
             || !string.IsNullOrEmpty(uri.Query)
             || !string.IsNullOrEmpty(uri.Fragment)
             || options.TimeoutSeconds is < 1 or > 30)
@@ -101,6 +115,8 @@ public static class OperationalConfiguration
                && Uri.TryCreate(normalized, UriKind.Absolute, out var uri)
                && (uri.Scheme == Uri.UriSchemeHttp
                    || uri.Scheme == Uri.UriSchemeHttps)
+               && !string.IsNullOrWhiteSpace(uri.Host)
+               && string.IsNullOrEmpty(uri.UserInfo)
                && string.IsNullOrEmpty(uri.Query)
                && string.IsNullOrEmpty(uri.Fragment)
                && (string.IsNullOrEmpty(uri.AbsolutePath)
