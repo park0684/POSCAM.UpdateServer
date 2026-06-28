@@ -50,6 +50,25 @@ public class GlobalExceptionHandlingMiddlewareTests
         Assert.DoesNotContain("1042", response.Message);
     }
 
+    [Fact]
+    public async Task InvokeAsync_요청본문한도초과를_413_FileTooLarge로_유지한다()
+    {
+        var context = CreateContext();
+        var middleware = CreateMiddleware(
+            new BadHttpRequestException(
+                "Request body too large.",
+                StatusCodes.Status413PayloadTooLarge));
+
+        await middleware.InvokeAsync(context);
+
+        var response = await ReadResponseAsync(context);
+
+        Assert.Equal(StatusCodes.Status413PayloadTooLarge, context.Response.StatusCode);
+        Assert.False(response.Success);
+        Assert.Equal((int)UpdateErrorCode.FileTooLarge, response.ErrorCode);
+        Assert.DoesNotContain("Request body too large", response.Message);
+    }
+
     private static DefaultHttpContext CreateContext()
     {
         return new DefaultHttpContext
