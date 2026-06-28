@@ -51,9 +51,18 @@ public static class OperationalConfiguration
             return false;
         }
 
-        return options.KnownProxies
+        var proxies = options.KnownProxies
             .Where(value => !string.IsNullOrWhiteSpace(value))
-            .All(value => TryParseSafeProxy(value, out _));
+            .Select(value => value.Trim())
+            .Distinct(StringComparer.OrdinalIgnoreCase)
+            .ToArray();
+
+        if (proxies.Length > 0 && options.ForwardLimit > proxies.Length)
+        {
+            return false;
+        }
+
+        return proxies.All(value => TryParseSafeProxy(value, out _));
     }
 
     public static void ApplyForwardedHeaders(
@@ -73,6 +82,11 @@ public static class OperationalConfiguration
         // 정확한 KnownProxies와 ForwardLimit을 신뢰 경계로 사용하므로
         // Header 개수 대칭은 강제하지 않는다.
         target.RequireHeaderSymmetry = false;
+
+        // ASP.NET Core 기본값의 Loopback 신뢰 항목도 제거한다.
+        // 아래 설정에 명시된 프록시 IP만 신뢰 대상으로 남긴다.
+        target.KnownNetworks.Clear();
+        target.KnownProxies.Clear();
 
         foreach (var proxy in source.KnownProxies
                      .Where(value => !string.IsNullOrWhiteSpace(value))
