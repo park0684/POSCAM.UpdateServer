@@ -119,6 +119,47 @@ public class ZipPackageValidatorTests
         }
     }
 
+    [Fact]
+    public async Task ValidateAsync_데이터가_포함된_디렉터리Entry를_거부한다()
+    {
+        var path = Path.Combine(Path.GetTempPath(), Guid.NewGuid() + ".zip");
+
+        using (var file = File.Create(path))
+        using (var archive = new ZipArchive(file, ZipArchiveMode.Create))
+        {
+            var directoryEntry = archive.CreateEntry(
+                "folder/",
+                CompressionLevel.Fastest);
+            await using (var stream = directoryEntry.Open())
+            await using (var writer = new StreamWriter(
+                             stream,
+                             Encoding.UTF8,
+                             bufferSize: 1024,
+                             leaveOpen: false))
+            {
+                await writer.WriteAsync(new string('x', 100));
+            }
+
+            var fileEntry = archive.CreateEntry(
+                "app.exe",
+                CompressionLevel.Fastest);
+            await using var fileStream = fileEntry.Open();
+            await fileStream.WriteAsync("binary"u8.ToArray());
+        }
+
+        try
+        {
+            var exception = await Assert.ThrowsAsync<ArtifactStorageException>(
+                () => new ZipPackageValidator().ValidateAsync(path, 10, 50));
+
+            Assert.Equal(ArtifactStorageFailureType.InvalidPackage, exception.FailureType);
+        }
+        finally
+        {
+            File.Delete(path);
+        }
+    }
+
     [Theory]
     [InlineData("safe/file.txt", false)]
     [InlineData("safe\\file.txt", false)]
