@@ -48,6 +48,15 @@ public sealed class UpdateManagementAuthorizationClient
             return Unavailable();
         }
 
+        if (_options.TimeoutSeconds is < 1 or > 30)
+        {
+            _logger.LogError(
+                "AuthServer 권한 확인 TimeoutSeconds 설정이 올바르지 않습니다. RequestId: {RequestId}",
+                requestId);
+
+            return Unavailable();
+        }
+
         if (!TryCreateAuthorizeUri(_options.BaseUrl, out var authorizeUri))
         {
             _logger.LogError(
@@ -83,47 +92,24 @@ public sealed class UpdateManagementAuthorizationClient
             cancellationToken);
         timeoutCancellation.CancelAfter(TimeSpan.FromSeconds(_options.TimeoutSeconds));
 
-        HttpResponseMessage response;
-
         try
         {
-            response = await _httpClient.SendAsync(
+            using var response = await _httpClient.SendAsync(
                 request,
                 HttpCompletionOption.ResponseHeadersRead,
                 timeoutCancellation.Token);
-        }
-        catch (OperationCanceledException)
-            when (!cancellationToken.IsCancellationRequested)
-        {
-            _logger.LogWarning(
-                "AuthServer 업데이트 관리 권한 확인이 시간 초과되었습니다. RequestId: {RequestId}",
-                requestId);
 
-            return Unavailable();
-        }
-        catch (HttpRequestException exception)
-        {
-            _logger.LogWarning(
-                exception,
-                "AuthServer 업데이트 관리 권한 확인 연결에 실패했습니다. RequestId: {RequestId}",
-                requestId);
-
-            return Unavailable();
-        }
-
-        using (response)
-        {
             AuthServerAuthorizationResponse? authResponse;
 
             try
             {
                 await using var responseStream = await response.Content.ReadAsStreamAsync(
-                    cancellationToken);
+                    timeoutCancellation.Token);
 
                 authResponse = await JsonSerializer.DeserializeAsync<AuthServerAuthorizationResponse>(
                     responseStream,
                     JsonOptions,
-                    cancellationToken);
+                    timeoutCancellation.Token);
             }
             catch (Exception exception)
                 when (exception is JsonException
@@ -153,6 +139,24 @@ public sealed class UpdateManagementAuthorizationClient
                 response.StatusCode,
                 authResponse,
                 requestId);
+        }
+        catch (OperationCanceledException)
+            when (!cancellationToken.IsCancellationRequested)
+        {
+            _logger.LogWarning(
+                "AuthServer 업데이트 관리 권한 확인이 시간 초과되었습니다. RequestId: {RequestId}",
+                requestId);
+
+            return Unavailable();
+        }
+        catch (HttpRequestException exception)
+        {
+            _logger.LogWarning(
+                exception,
+                "AuthServer 업데이트 관리 권한 확인 연결에 실패했습니다. RequestId: {RequestId}",
+                requestId);
+
+            return Unavailable();
         }
     }
 
@@ -231,13 +235,14 @@ public sealed class UpdateManagementAuthorizationClient
     }
 
     private static bool TryCreateAuthorizeUri(
-        string baseUrl,
+        string? baseUrl,
         out Uri authorizeUri)
     {
         authorizeUri = null!;
 
-        if (!Uri.TryCreate(
-                baseUrl?.TrimEnd('/') + "/",
+        if (string.IsNullOrWhiteSpace(baseUrl)
+            || !Uri.TryCreate(
+                baseUrl.TrimEnd('/') + "/",
                 UriKind.Absolute,
                 out var baseUri)
             || baseUri.Scheme is not (Uri.UriSchemeHttp or Uri.UriSchemeHttps))
