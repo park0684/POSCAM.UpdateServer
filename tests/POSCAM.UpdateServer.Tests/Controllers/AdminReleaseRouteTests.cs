@@ -9,6 +9,7 @@ public class AdminReleaseRouteTests
     [Theory]
     [InlineData(typeof(AdminProductsController), "api/v1/admin/products")]
     [InlineData(typeof(AdminReleasesController), "api/v1/admin/releases")]
+    [InlineData(typeof(AdminArtifactsController), "api/v1/admin/releases/{releaseCode:long}/artifacts")]
     public void 관리자_Controller는_공통보호경로_아래에_있다(
         Type controllerType,
         string expectedRoute)
@@ -25,6 +26,7 @@ public class AdminReleaseRouteTests
     [Theory]
     [InlineData(typeof(AdminProductsController))]
     [InlineData(typeof(AdminReleasesController))]
+    [InlineData(typeof(AdminArtifactsController))]
     public void 관리자_Controller에는_AllowAnonymous를_사용하지_않는다(
         Type controllerType)
     {
