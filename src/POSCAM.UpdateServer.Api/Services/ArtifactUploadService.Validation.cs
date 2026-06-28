@@ -139,6 +139,14 @@ public sealed partial class ArtifactUploadService
             "Draft 상태의 릴리스에만 Artifact를 업로드할 수 있습니다.");
     }
 
+    private static AdminServiceResult<ArtifactUploadResponse> ReleaseChanged()
+    {
+        return AdminServiceResult<ArtifactUploadResponse>.Fail(
+            StatusCodes.Status409Conflict,
+            UpdateErrorCode.InvalidReleaseState,
+            "업로드 중 릴리스 정보가 변경되었습니다. 다시 시도해 주세요.");
+    }
+
     private static AdminServiceResult<ArtifactUploadResponse> ValidationFailure(
         string message)
     {
