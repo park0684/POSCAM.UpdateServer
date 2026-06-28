@@ -12,6 +12,21 @@ public interface IUpdateReleaseRepository
         IDbTransaction? transaction = null,
         CancellationToken cancellationToken = default);
 
+    Task<UpdateRelease?> GetByCodeForUpdateAsync(
+        long releaseCode,
+        IDbTransaction transaction,
+        CancellationToken cancellationToken = default);
+
+    Task<IReadOnlyList<UpdateRelease>> GetPagedAsync(
+        ReleaseSearchCriteria criteria,
+        IDbTransaction? transaction = null,
+        CancellationToken cancellationToken = default);
+
+    Task<long> CountAsync(
+        ReleaseSearchCriteria criteria,
+        IDbTransaction? transaction = null,
+        CancellationToken cancellationToken = default);
+
     Task<bool> ExistsVersionAsync(
         string productCode,
         string channel,
