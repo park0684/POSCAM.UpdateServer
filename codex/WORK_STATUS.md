@@ -3,8 +3,8 @@
 | ID | 작업 | 상태 | 빌드 | 테스트 | 변경 파일 | 비고 |
 |---|---|---|---|---|---|---|
 | B00 | Starter 분석 | Completed | 현재 템플릿 기준 미실행 | 해당 없음 | codex/reports/B00_ANALYSIS.md, WORK_STATUS | 정책·DB·Auth 계약 충돌 없음 |
-| B01 | 기본 프로젝트 | InProgress | 로컬 검증 필요 | 로컬 검증 필요 | solution, API 기반, Options, Middleware, tests, appsettings, csproj | feature/initial-update-server 반영 완료 |
-| B02 | 도메인·버전 | Pending | - | - | - | - |
+| B01 | 기본 프로젝트 | Completed | Release 성공 | 5/5 성공 | solution, API 기반, Options, Middleware, tests, appsettings, csproj | 사용자 로컬 검증 완료 |
+| B02 | 도메인·버전 | InProgress | 로컬 검증 필요 | 로컬 검증 필요 | Domain, Enums, Entities, 도메인 테스트, B02 보고서 | feature/initial-update-server 반영 완료 |
 | B03 | DB 계층 | Pending | - | - | - | - |
 | B04 | 공개 Update Check | Pending | - | - | - | - |
 | B05 | 관리자 인증 | Pending | - | - | - | A05 완료 |
