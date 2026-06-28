@@ -19,4 +19,15 @@ internal sealed class FakeArtifactManagementQueryRepository
     {
         return Task.FromResult(LockedArtifact);
     }
+
+    public Task<UpdateArtifact?> GetByCodeForUpdateAsync(
+        long artifactCode,
+        IDbTransaction transaction,
+        CancellationToken cancellationToken = default)
+    {
+        return Task.FromResult(
+            LockedArtifact is not null && LockedArtifact.ArtifactCode == artifactCode
+                ? LockedArtifact
+                : null);
+    }
 }
