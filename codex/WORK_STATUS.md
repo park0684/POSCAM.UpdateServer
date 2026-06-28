@@ -8,7 +8,7 @@
 | B03 | DB 계층 | Completed | Release 성공 | B02 포함 94/94 성공 | Database, Repositories, SQL tests, DI, appsettings, B03 보고서 | 사용자 로컬 검증 완료 |
 | B04 | 공개 Update Check | Completed | Release 성공 | 120/120 성공 | DTO, Service, Controller, Repository 보완, tests, B04 보고서 | 사용자 로컬 검증 완료 |
 | B05 | 관리자 인증 | Completed | Release 성공 | 149/149 성공 | AuthServer Client, admin Middleware, Actor Accessor, DI, tests, B05 보고서 | 사용자 로컬 검증 완료 |
-| B06 | 릴리스 관리 | InProgress | 로컬 검증 필요 | 로컬 검증 필요 | DTO, Service, Controller, 관리 조회 Repository, 감사, tests, B06 보고서 | feature/initial-update-server 반영 완료 |
+| B06 | 릴리스 관리 | Completed | Release 성공, 경고 0 | 172/172 성공 | DTO, Service, Controller, 관리 조회 Repository, 감사, tests, B06 보고서 | 사용자 로컬 검증 완료 |
 | B07 | Artifact 업로드 | Pending | - | - | - | - |
 | B08 | 게시·감사 | Pending | - | - | - | - |
 | B09 | 운영 기능 | Pending | - | - | - | - |
