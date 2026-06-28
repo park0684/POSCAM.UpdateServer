@@ -70,16 +70,22 @@ public sealed partial class ZipPackageValidator : IZipPackageValidator
                         "/",
                         StringComparison.Ordinal);
 
-                    if (directoryEntry)
+                    // 디렉터리 Entry는 이름만 디렉터리 형태일 뿐 실제 데이터가
+                    // 포함될 수 있으므로 Stream까지 읽어 0바이트인지 확인한다.
+                    // 이를 건너뛰면 Expanded Bytes와 손상 ZIP 검증을 우회할 수 있다.
+                    if (directoryEntry && entry.Length != 0)
                     {
-                        continue;
+                        throw InvalidPackage("ZIP 디렉터리 항목에는 데이터를 포함할 수 없습니다.");
                     }
 
-                    hasFileEntry = true;
-                    totalExpandedBytes = AddExpandedBytes(
-                        totalExpandedBytes,
-                        entry.Length,
-                        maxExpandedBytes);
+                    if (!directoryEntry)
+                    {
+                        hasFileEntry = true;
+                        totalExpandedBytes = AddExpandedBytes(
+                            totalExpandedBytes,
+                            entry.Length,
+                            maxExpandedBytes);
+                    }
 
                     await using var entryStream = entry.Open();
                     long actualEntryBytes = 0;
@@ -104,6 +110,11 @@ public sealed partial class ZipPackageValidator : IZipPackageValidator
                     if (actualEntryBytes != entry.Length)
                     {
                         throw InvalidPackage("ZIP 항목 크기 정보가 올바르지 않습니다.");
+                    }
+
+                    if (directoryEntry && actualEntryBytes != 0)
+                    {
+                        throw InvalidPackage("ZIP 디렉터리 항목에는 데이터를 포함할 수 없습니다.");
                     }
                 }
             }
