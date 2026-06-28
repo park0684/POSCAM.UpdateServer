@@ -61,6 +61,16 @@ public class RepositorySqlContractTests
     }
 
     [Fact]
+    public void Published_존재조회는_제품과_채널과_Published상태를_검사한다()
+    {
+        var sql = Normalize(UpdateReleaseRepository.HasPublishedReleaseSql);
+
+        Assert.Contains("rel_product_code = @ProductCode", sql, StringComparison.OrdinalIgnoreCase);
+        Assert.Contains("rel_channel = @Channel", sql, StringComparison.OrdinalIgnoreCase);
+        Assert.Contains("rel_status = @PublishedStatus", sql, StringComparison.OrdinalIgnoreCase);
+    }
+
+    [Fact]
     public void 조회_SQL은_Entity속성에_명시적_별칭을_사용한다()
     {
         Assert.Contains("prd_code AS ProductCode", UpdateProductRepository.GetByCodeSql, StringComparison.OrdinalIgnoreCase);
@@ -88,6 +98,7 @@ public class RepositorySqlContractTests
         yield return UpdateProductRepository.GetActiveSql;
         yield return UpdateReleaseRepository.GetByCodeSql;
         yield return UpdateReleaseRepository.ExistsVersionSql;
+        yield return UpdateReleaseRepository.HasPublishedReleaseSql;
         yield return UpdateReleaseRepository.CreateDraftSql;
         yield return UpdateReleaseRepository.UpdateDraftSql;
         yield return UpdateReleaseRepository.DeleteDraftSql;
