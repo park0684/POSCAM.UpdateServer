@@ -2,10 +2,11 @@
 
 ## 작업 결과
 
-- 상태: InProgress
+- 상태: Completed
 - 구현: 완료
-- 로컬 Release 빌드·전체 테스트: 확인 필요
-- Docker build: 로컬 Docker 환경에서 확인 필요
+- 로컬 Release 빌드: 성공, 오류 0, 경고 0
+- 전체 테스트: 293/293 성공, 실패 0, 건너뜀 0
+- Docker build: 로컬 Docker 환경에서 별도 확인 가능
 
 ## 변경 파일
 
@@ -143,6 +144,8 @@ GET /health/ready
 
 AuthServer는 Ready 조건에서 제외한다. Health 응답에는 연결 문자열, 비밀번호, 내부 서비스 키, 물리 경로, 예외 메시지나 Stack Trace를 노출하지 않는다.
 
+테스트 실행 중 출력된 DB readiness `warn`과 `fail` 로그는 연결되지 않은 테스트용 DB가 `/health/ready`에서 `503 / Unhealthy`로 처리되는지를 확인하기 위한 의도된 테스트 로그이며 테스트 실패가 아니다.
+
 ## Request ID·로그
 
 허용 Request ID 문자:
@@ -219,7 +222,9 @@ A-Z a-z 0-9 - _ . :
 - Storage Ready 쓰기·삭제 검사
 - 전역 오류 응답 Request ID 보존
 
-## 검증 명령
+## 검증 결과
+
+실행 명령:
 
 ```powershell
 cd D:\_work\POSCAM.UpdateServer
@@ -231,32 +236,34 @@ dotnet build POSCAM.UpdateServer.sln -c Release
 dotnet test POSCAM.UpdateServer.sln -c Release --no-build
 ```
 
-예상 전체 테스트 수는 약 293개이다. 정확한 개수보다 오류·경고·실패·건너뜀 여부가 우선이다.
-
-Docker가 설치된 환경에서는 추가 실행:
-
-```powershell
-docker build -t poscam-update-server:b09-test .
-```
-
-검증 기준:
+결과:
 
 - Restore 성공
 - API Release 빌드 성공
 - Tests Release 빌드 성공
 - 컴파일 오류 0
 - 경고 0
+- 테스트 293/293 성공
 - 테스트 실패 0
 - 건너뜀 0
-- 가능하면 Docker build 성공
-- Docker 실행 사용자가 root가 아님
+- 사용자 로컬 Release 구성 검증 완료
+
+Docker가 설치된 환경에서는 다음 검증을 추가할 수 있다.
+
+```powershell
+docker build -t poscam-update-server:b09-test .
+docker image inspect poscam-update-server:b09-test --format "{{.Config.User}}"
+```
+
+실행 사용자 결과는 `app`이어야 한다.
 
 ## 남은 문제
 
-- 컴파일 오류: 로컬 검증 필요
+- 컴파일 오류: 없음
+- 테스트 실패: 없음
 - 실제 동작 오류: 실제 MariaDB·IIS·Nginx·Docker Volume 연동은 B10 최종 검증 필요
 - 불필요한 중복: 정적 검토 완료
-- 다음 단계 선행조건: B09 Release 빌드·전체 테스트 성공
+- 다음 단계 선행조건: 충족
 
 ## 정책 이탈 여부
 
