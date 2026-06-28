@@ -150,6 +150,23 @@ public sealed partial class ArtifactUploadService : IArtifactUploadService
                     return InvalidReleaseState();
                 }
 
+                if (!string.Equals(
+                        preliminaryRelease.ProductCode,
+                        lockedRelease.ProductCode,
+                        StringComparison.Ordinal)
+                    || !string.Equals(
+                        preliminaryRelease.Channel,
+                        lockedRelease.Channel,
+                        StringComparison.Ordinal)
+                    || !string.Equals(
+                        preliminaryRelease.Version,
+                        lockedRelease.Version,
+                        StringComparison.Ordinal))
+                {
+                    await transaction.RollbackAsync(CancellationToken.None);
+                    return ReleaseChanged();
+                }
+
                 var existing = await _artifactQueryRepository.GetByTargetForUpdateAsync(
                     releaseCode,
                     upload.OperatingSystem,
