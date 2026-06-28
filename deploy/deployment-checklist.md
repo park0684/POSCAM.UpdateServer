@@ -8,9 +8,12 @@
 - [ ] 명시적 이미지 태그
 - [ ] 양쪽 내부 서비스 키 32자 이상
 - [ ] poscam-internal 네트워크
-- [ ] Nginx가 컨테이너에서 보이는 단일 프록시 IP 확인
-- [ ] `UPDATE_TRUSTED_PROXY_IP`에 확인한 IP만 설정
-- [ ] AdminWeb CORS Origin 확인
+- [ ] 컨테이너가 직접 보는 Nginx/Docker Host IP 확인
+- [ ] IIS Reverse Proxy의 실제 IP 확인
+- [ ] `UPDATE_NGINX_PROXY_IP`, `UPDATE_IIS_PROXY_IP`에 정확한 IP만 설정
+- [ ] IIS가 원본 Client IP를 X-Forwarded-For에 전달하는지 확인
+- [ ] Nginx가 기존 X-Forwarded-For 체인을 보존하는지 확인
+- [ ] AdminWeb HTTPS CORS Origin 확인
 
 ## 이미지
 - [ ] `docker build -t poscam-update-server:<version> .` 성공
@@ -34,14 +37,16 @@
 - [ ] `/api/internal` 외부 404
 - [ ] 허용 Origin CORS preflight 성공
 - [ ] 미허용 Origin에 CORS 허용 Header 없음
-- [ ] Update Check 60회/60초 제한과 429 응답 확인
+- [ ] 서로 다른 외부 Client IP가 Rate Limit에서 별도 Partition으로 확인됨
+- [ ] 동일 Client IP의 Update Check 60회/60초 제한과 429 응답 확인
 - [ ] Update Check
 - [ ] 테스트 업로드·게시·다운로드·SHA-256·Range
 
 ## 로그·보안
 - [ ] 응답 `X-Request-ID`와 API·감사 로그 Request ID 연결
 - [ ] 로그에 Authorization·Cookie·내부 서비스 키 없음
-- [ ] 외부 전달 IP가 신뢰 프록시를 통해서만 반영됨
+- [ ] 외부 전달 IP가 등록된 IIS·Nginx 프록시를 통해서만 반영됨
+- [ ] `0.0.0.0`, `::`, 광범위한 Network를 신뢰하지 않음
 - [ ] Swagger가 운영 환경에서 공개되지 않음
 - [ ] 자동 Migration이 실행되지 않음
 
