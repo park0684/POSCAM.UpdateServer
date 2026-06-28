@@ -36,6 +36,21 @@ public sealed class GlobalExceptionHandlingMiddleware
                 context.Request.Method,
                 context.Request.Path);
         }
+        catch (BadHttpRequestException exception)
+            when (exception.StatusCode == StatusCodes.Status413PayloadTooLarge)
+        {
+            _logger.LogWarning(
+                "요청 본문 크기 제한을 초과했습니다. RequestId: {RequestId}, Method: {Method}, Path: {Path}",
+                context.TraceIdentifier,
+                context.Request.Method,
+                context.Request.Path);
+
+            await WriteErrorAsync(
+                context,
+                StatusCodes.Status413PayloadTooLarge,
+                UpdateErrorCode.FileTooLarge,
+                "업로드 파일 크기 제한을 초과했습니다.");
+        }
         catch (UpdateDatabaseException exception)
         {
             _logger.LogError(
@@ -46,6 +61,7 @@ public sealed class GlobalExceptionHandlingMiddleware
 
             await WriteErrorAsync(
                 context,
+                StatusCodes.Status500InternalServerError,
                 UpdateErrorCode.DatabaseError,
                 "업데이트 데이터베이스 작업 중 오류가 발생했습니다.");
         }
@@ -60,6 +76,7 @@ public sealed class GlobalExceptionHandlingMiddleware
 
             await WriteErrorAsync(
                 context,
+                StatusCodes.Status500InternalServerError,
                 UpdateErrorCode.UnknownError,
                 "요청을 처리하는 중 서버 오류가 발생했습니다.");
         }
@@ -67,6 +84,7 @@ public sealed class GlobalExceptionHandlingMiddleware
 
     private static async Task WriteErrorAsync(
         HttpContext context,
+        int statusCode,
         UpdateErrorCode errorCode,
         string message)
     {
@@ -76,7 +94,7 @@ public sealed class GlobalExceptionHandlingMiddleware
         }
 
         context.Response.Clear();
-        context.Response.StatusCode = StatusCodes.Status500InternalServerError;
+        context.Response.StatusCode = statusCode;
         context.Response.ContentType = "application/json; charset=utf-8";
 
         var response = ApiResponse<object?>.Fail(errorCode, message);
