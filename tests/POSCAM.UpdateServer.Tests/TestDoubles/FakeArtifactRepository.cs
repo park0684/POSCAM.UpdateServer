@@ -12,6 +12,8 @@ internal sealed class FakeArtifactRepository : IUpdateArtifactRepository
     public UpdateArtifact? LastReplacedArtifact { get; private set; }
     public bool ReplaceResult { get; set; } = true;
     public long CreatedArtifactCode { get; set; } = 200;
+    public Exception? CreateException { get; set; }
+    public Exception? ReplaceException { get; set; }
 
     public Task<UpdateArtifact?> GetByCodeAsync(
         long artifactCode,
@@ -50,6 +52,11 @@ internal sealed class FakeArtifactRepository : IUpdateArtifactRepository
         IDbTransaction? transaction = null,
         CancellationToken cancellationToken = default)
     {
+        if (CreateException is not null)
+        {
+            throw CreateException;
+        }
+
         artifact.ArtifactCode = CreatedArtifactCode;
         LastCreatedArtifact = artifact;
         Artifacts = Artifacts.Append(artifact).ToArray();
@@ -61,6 +68,11 @@ internal sealed class FakeArtifactRepository : IUpdateArtifactRepository
         IDbTransaction? transaction = null,
         CancellationToken cancellationToken = default)
     {
+        if (ReplaceException is not null)
+        {
+            throw ReplaceException;
+        }
+
         LastReplacedArtifact = artifact;
 
         if (ReplaceResult)
