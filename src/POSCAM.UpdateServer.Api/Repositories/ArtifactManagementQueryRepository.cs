@@ -8,8 +8,7 @@ namespace POSCAM.UpdateServer.Api.Repositories;
 public sealed class ArtifactManagementQueryRepository
     : DapperRepositoryBase, IArtifactManagementQueryRepository
 {
-    internal const string GetByTargetForUpdateSql = @"
-SELECT
+    private const string SelectColumns = @"
     art_code AS ArtifactCode,
     art_release_code AS ReleaseCode,
     art_public_id AS PublicId,
@@ -24,12 +23,24 @@ SELECT
     art_signature AS Signature,
     art_status AS ArtifactStatus,
     art_idate AS CreatedAt,
-    art_udate AS UpdatedAt
+    art_udate AS UpdatedAt";
+
+    internal static readonly string GetByTargetForUpdateSql = $@"
+SELECT
+{SelectColumns}
 FROM update_artifacts
 WHERE art_release_code = @ReleaseCode
   AND art_os = @OperatingSystem
   AND art_architecture = @Architecture
   AND art_package_type = @PackageType
+LIMIT 1
+FOR UPDATE;";
+
+    internal static readonly string GetByCodeForUpdateSql = $@"
+SELECT
+{SelectColumns}
+FROM update_artifacts
+WHERE art_code = @ArtifactCode
 LIMIT 1
 FOR UPDATE;";
 
@@ -62,6 +73,28 @@ FOR UPDATE;";
                         Architecture = architecture,
                         PackageType = packageType
                     },
+                    activeTransaction,
+                    cancellationToken);
+
+                return await connection.QuerySingleOrDefaultAsync<UpdateArtifact>(command);
+            });
+    }
+
+    public Task<UpdateArtifact?> GetByCodeForUpdateAsync(
+        long artifactCode,
+        IDbTransaction transaction,
+        CancellationToken cancellationToken = default)
+    {
+        ArgumentNullException.ThrowIfNull(transaction);
+
+        return ExecuteAsync(
+            transaction,
+            cancellationToken,
+            async (connection, activeTransaction) =>
+            {
+                var command = CreateCommand(
+                    GetByCodeForUpdateSql,
+                    new { ArtifactCode = artifactCode },
                     activeTransaction,
                     cancellationToken);
 
