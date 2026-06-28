@@ -43,6 +43,7 @@ public class ArtifactUploadServiceTests
         Assert.Equal(AuditActions.Upload, audit.Action);
         Assert.Equal(AuditTargetTypes.Artifact, audit.TargetType);
         Assert.Equal("200", audit.TargetCode);
+        Assert.Equal(10, audit.ActorUserCode);
         Assert.Null(audit.BeforeData);
         Assert.Contains("new-public-id", audit.AfterData);
 
@@ -272,7 +273,7 @@ public class ArtifactUploadServiceTests
     }
 
     private static ArtifactUploadRequest CreateRequest(
-        long fileLength = 10,
+        int fileLength = 10,
         string fileName = "package.zip")
     {
         var stream = new MemoryStream(new byte[fileLength]);
