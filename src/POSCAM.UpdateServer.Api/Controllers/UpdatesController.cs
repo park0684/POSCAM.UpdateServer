@@ -32,9 +32,9 @@ public sealed class UpdatesController : ControllerBase
         [FromBody] UpdateCheckRequest? request,
         CancellationToken cancellationToken)
     {
-        Response.Headers.CacheControl = "no-store";
-        Response.Headers.Pragma = "no-cache";
-        Response.Headers.Expires = "0";
+        Response.Headers["Cache-Control"] = "no-store";
+        Response.Headers["Pragma"] = "no-cache";
+        Response.Headers["Expires"] = "0";
 
         var result = await _updateCheckService.CheckAsync(
             request,
