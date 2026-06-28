@@ -91,9 +91,12 @@ builder.Services.AddScoped<IReleaseManagementQueryRepository, ReleaseManagementQ
 builder.Services.AddScoped<IUpdateArtifactRepository, UpdateArtifactRepository>();
 builder.Services.AddScoped<IArtifactManagementQueryRepository, ArtifactManagementQueryRepository>();
 builder.Services.AddScoped<IUpdateAuditLogRepository, UpdateAuditLogRepository>();
+builder.Services.AddScoped<IAuditManagementQueryRepository, AuditManagementQueryRepository>();
 builder.Services.AddScoped<IUpdateCheckService, UpdateCheckService>();
 builder.Services.AddScoped<IReleaseManagementService, ReleaseManagementService>();
 builder.Services.AddScoped<IArtifactUploadService, ArtifactUploadService>();
+builder.Services.AddScoped<IReleaseLifecycleService, ReleaseLifecycleService>();
+builder.Services.AddScoped<IAuditQueryService, AuditQueryService>();
 builder.Services.AddSingleton<IZipPackageValidator, ZipPackageValidator>();
 builder.Services.AddSingleton<IArtifactStorageService, ArtifactStorageService>();
 
