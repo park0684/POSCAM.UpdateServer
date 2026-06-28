@@ -73,12 +73,16 @@ public class OperationalConfigurationTests
     }
 
     [Fact]
-    public void TrustedProxyOptions_명시된IP와_1단계만_적용한다()
+    public void TrustedProxyOptions_IIS와_Nginx의_정확한2개IP를_적용한다()
     {
         var source = new TrustedProxyOptions
         {
-            ForwardLimit = 1,
-            KnownProxies = new List<string> { "172.18.0.1" }
+            ForwardLimit = 2,
+            KnownProxies = new List<string>
+            {
+                "172.18.0.1",
+                "192.168.0.10"
+            }
         };
         var target = new ForwardedHeadersOptions();
 
@@ -87,13 +91,14 @@ public class OperationalConfigurationTests
 
         OperationalConfiguration.ApplyForwardedHeaders(target, source);
 
-        Assert.Equal(1, target.ForwardLimit);
+        Assert.Equal(2, target.ForwardLimit);
         Assert.True(target.RequireHeaderSymmetry);
         Assert.True(
             target.ForwardedHeaders.HasFlag(ForwardedHeaders.XForwardedFor));
         Assert.True(
             target.ForwardedHeaders.HasFlag(ForwardedHeaders.XForwardedProto));
         Assert.Contains(IPAddress.Parse("172.18.0.1"), target.KnownProxies);
+        Assert.Contains(IPAddress.Parse("192.168.0.10"), target.KnownProxies);
     }
 
     [Theory]
