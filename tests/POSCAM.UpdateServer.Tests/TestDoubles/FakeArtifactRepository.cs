@@ -28,7 +28,13 @@ internal sealed class FakeArtifactRepository : IUpdateArtifactRepository
         IDbTransaction? transaction = null,
         CancellationToken cancellationToken = default)
     {
-        return Task.FromResult(Artifacts);
+        IReadOnlyList<UpdateArtifact> result = Artifacts
+            .Where(x =>
+                x.ReleaseCode == releaseCode
+                && x.ArtifactStatus == ArtifactStatus.Active)
+            .ToArray();
+
+        return Task.FromResult(result);
     }
 
     public Task<UpdateArtifact?> GetByTargetAsync(
