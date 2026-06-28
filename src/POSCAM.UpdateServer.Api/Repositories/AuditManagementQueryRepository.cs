@@ -110,7 +110,7 @@ WHERE (@Action IS NULL OR l.ual_action = @Action)
         ArgumentNullException.ThrowIfNull(criteria);
 
         return ExecuteAsync<IReadOnlyList<UpdateAuditLog>>(
-            transaction: null,
+            null,
             cancellationToken,
             async (connection, activeTransaction) =>
             {
@@ -132,7 +132,7 @@ WHERE (@Action IS NULL OR l.ual_action = @Action)
         ArgumentNullException.ThrowIfNull(criteria);
 
         return ExecuteAsync(
-            transaction: null,
+            null,
             cancellationToken,
             async (connection, activeTransaction) =>
             {
@@ -154,7 +154,7 @@ WHERE (@Action IS NULL OR l.ual_action = @Action)
         CancellationToken cancellationToken = default)
     {
         return ExecuteAsync<IReadOnlyList<UpdateAuditLog>>(
-            transaction: null,
+            null,
             cancellationToken,
             async (connection, activeTransaction) =>
             {
@@ -181,7 +181,7 @@ WHERE (@Action IS NULL OR l.ual_action = @Action)
         CancellationToken cancellationToken = default)
     {
         return ExecuteAsync(
-            transaction: null,
+            null,
             cancellationToken,
             async (connection, activeTransaction) =>
             {
