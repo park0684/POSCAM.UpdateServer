@@ -1,8 +1,10 @@
 using System.Text.Json;
 using Microsoft.AspNetCore.Diagnostics.HealthChecks;
 using Microsoft.Extensions.Diagnostics.HealthChecks;
+using POSCAM.UpdateServer.Api.Infrastructure.Database;
 using POSCAM.UpdateServer.Api.Infrastructure.Middleware;
 using POSCAM.UpdateServer.Api.Options;
+using POSCAM.UpdateServer.Api.Repositories;
 
 var builder = WebApplication.CreateBuilder(args);
 
@@ -42,6 +44,12 @@ builder.Services
     .Bind(builder.Configuration.GetSection(UpdateCheckRateLimitingOptions.SectionName))
     .ValidateDataAnnotations()
     .ValidateOnStart();
+
+builder.Services.AddSingleton<IDbContext, DapperContext>();
+builder.Services.AddScoped<IUpdateProductRepository, UpdateProductRepository>();
+builder.Services.AddScoped<IUpdateReleaseRepository, UpdateReleaseRepository>();
+builder.Services.AddScoped<IUpdateArtifactRepository, UpdateArtifactRepository>();
+builder.Services.AddScoped<IUpdateAuditLogRepository, UpdateAuditLogRepository>();
 
 builder.Services
     .AddHealthChecks()
