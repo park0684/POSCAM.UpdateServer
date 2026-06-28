@@ -16,6 +16,12 @@ public interface IArtifactStorageService
         StagedArtifactFile stagedFile,
         CancellationToken cancellationToken = default);
 
+    Task ValidateStoredArtifactAsync(
+        string storageKey,
+        long expectedFileSize,
+        string expectedSha256,
+        CancellationToken cancellationToken = default);
+
     Task MoveToPackagesAsync(
         StagedArtifactFile stagedFile,
         ArtifactStorageDestination destination,
@@ -27,5 +33,13 @@ public interface IArtifactStorageService
 
     Task<bool> RemoveOrQuarantineAsync(
         string storageKey,
+        CancellationToken cancellationToken = default);
+
+    Task<QuarantinedArtifactFile> QuarantineAsync(
+        string storageKey,
+        CancellationToken cancellationToken = default);
+
+    Task<bool> RestoreFromQuarantineAsync(
+        QuarantinedArtifactFile quarantinedFile,
         CancellationToken cancellationToken = default);
 }
