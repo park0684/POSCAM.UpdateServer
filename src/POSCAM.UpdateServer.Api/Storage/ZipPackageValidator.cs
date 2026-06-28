@@ -65,7 +65,8 @@ public sealed partial class ZipPackageValidator : IZipPackageValidator
                         throw InvalidPackage("ZIP 내부 경로가 안전하지 않습니다.");
                     }
 
-                    var directoryEntry = entry.FullName.EndsWith(
+                    var normalizedEntryName = entry.FullName.Replace('\\', '/');
+                    var directoryEntry = normalizedEntryName.EndsWith(
                         "/",
                         StringComparison.Ordinal);
 
@@ -147,7 +148,6 @@ public sealed partial class ZipPackageValidator : IZipPackageValidator
         var normalized = entryPath.Replace('\\', '/');
 
         if (normalized.StartsWith("/", StringComparison.Ordinal)
-            || normalized.StartsWith("//", StringComparison.Ordinal)
             || WindowsDrivePathRegex().IsMatch(normalized)
             || Path.IsPathRooted(entryPath))
         {
