@@ -1,6 +1,7 @@
 using System.Data;
 using POSCAM.UpdateServer.Api.Models.Domain;
 using POSCAM.UpdateServer.Api.Models.Entities;
+using POSCAM.UpdateServer.Api.Models.Enums;
 using POSCAM.UpdateServer.Api.Models.Queries;
 using POSCAM.UpdateServer.Api.Repositories;
 
@@ -12,10 +13,14 @@ internal sealed class FakeReleaseRepositoryForManagement : IUpdateReleaseReposit
     public bool DuplicateExists { get; set; }
     public bool UpdateResult { get; set; } = true;
     public bool DeleteResult { get; set; } = true;
+    public bool PublishResult { get; set; } = true;
+    public bool DisableResult { get; set; } = true;
     public long CreatedReleaseCode { get; set; } = 100;
     public UpdateRelease? LastCreatedRelease { get; private set; }
     public UpdateRelease? LastUpdatedRelease { get; private set; }
     public long? LastDeletedReleaseCode { get; private set; }
+    public long? LastPublishedReleaseCode { get; private set; }
+    public long? LastDisabledReleaseCode { get; private set; }
 
     public Task<UpdateRelease?> GetByCodeAsync(
         long releaseCode,
@@ -84,7 +89,17 @@ internal sealed class FakeReleaseRepositoryForManagement : IUpdateReleaseReposit
         IDbTransaction? transaction = null,
         CancellationToken cancellationToken = default)
     {
-        throw new NotSupportedException();
+        LastPublishedReleaseCode = releaseCode;
+
+        if (PublishResult && ReleaseByCode is not null)
+        {
+            ReleaseByCode = Clone(ReleaseByCode);
+            ReleaseByCode.ReleaseStatus = ReleaseStatus.Published;
+            ReleaseByCode.PublishedAt = DateTime.UtcNow;
+            ReleaseByCode.UpdatedAt = DateTime.UtcNow;
+        }
+
+        return Task.FromResult(PublishResult);
     }
 
     public Task<bool> DisableAsync(
@@ -92,7 +107,16 @@ internal sealed class FakeReleaseRepositoryForManagement : IUpdateReleaseReposit
         IDbTransaction? transaction = null,
         CancellationToken cancellationToken = default)
     {
-        throw new NotSupportedException();
+        LastDisabledReleaseCode = releaseCode;
+
+        if (DisableResult && ReleaseByCode is not null)
+        {
+            ReleaseByCode = Clone(ReleaseByCode);
+            ReleaseByCode.ReleaseStatus = ReleaseStatus.Disabled;
+            ReleaseByCode.UpdatedAt = DateTime.UtcNow;
+        }
+
+        return Task.FromResult(DisableResult);
     }
 
     public Task<CompatibleReleaseArtifact?> FindLatestCompatibleAsync(
@@ -128,7 +152,7 @@ internal sealed class FakeReleaseRepositoryForManagement : IUpdateReleaseReposit
             CreatedByUserCode = release.CreatedByUserCode,
             CreatedByUserName = release.CreatedByUserName,
             CreatedAt = release.CreatedAt == default ? DateTime.UtcNow : release.CreatedAt,
-            UpdatedAt = DateTime.UtcNow
+            UpdatedAt = release.UpdatedAt
         };
     }
 }
