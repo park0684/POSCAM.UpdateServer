@@ -118,6 +118,7 @@ public sealed partial class ReleaseLifecycleService
             release.ReleaseNotes,
             release.InternalMemo,
             Status = (int)release.ReleaseStatus,
+            StatusName = release.ReleaseStatus.ToString(),
             release.PublishedAt,
             release.CreatedByUserCode,
             release.CreatedByUserName,
@@ -142,6 +143,7 @@ public sealed partial class ReleaseLifecycleService
             artifact.FileSize,
             artifact.Sha256,
             Status = (int)artifact.ArtifactStatus,
+            StatusName = artifact.ArtifactStatus.ToString(),
             artifact.CreatedAt,
             artifact.UpdatedAt
         };
