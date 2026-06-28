@@ -47,6 +47,7 @@ public class ZipPackageValidatorTests
     [InlineData("C:/windows.txt")]
     [InlineData("C:\\windows.txt")]
     [InlineData("\\\\server\\share\\file.txt")]
+    [InlineData("safe/file.txt:stream")]
     public async Task ValidateAsync_위험한_Entry경로를_거부한다(string entryName)
     {
         var path = CreateZip((entryName, "danger"));
@@ -124,6 +125,7 @@ public class ZipPackageValidatorTests
     [InlineData("../file.txt", true)]
     [InlineData("/file.txt", true)]
     [InlineData("D:/file.txt", true)]
+    [InlineData("safe/file.txt:stream", true)]
     public void IsUnsafeEntryPath_경로정책을_판정한다(
         string path,
         bool expected)
