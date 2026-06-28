@@ -2,11 +2,13 @@
 
 ## 작업 결과
 
-- 상태: InProgress
+- 상태: Completed
 - 전체 정적 검토: 완료
 - 확인된 결함 수정: 완료
-- 로컬 Release 빌드·전체 테스트: 확인 필요
-- Docker build: 로컬 Docker 환경에서 선택 검증
+- 로컬 Release 빌드: 성공, 오류 0, 경고 0
+- 전체 테스트: 294/294 성공, 실패 0, 건너뜀 0
+- Docker build: 성공
+- Docker 실행 사용자: `app`
 
 ## 변경 파일
 
@@ -20,9 +22,9 @@
   - 실제 `update-server.env`, `.env`, `.env.*` 파일을 Git 추적에서 제외한다.
   - `update-server.env.example`은 계속 추적한다.
 - `codex/WORK_STATUS.md`
-  - B10을 로컬 검증 대기 상태로 갱신한다.
+  - B10을 Completed로 갱신한다.
 - `codex/reports/B10_FINAL_VERIFICATION.md`
-  - 최종 정적 검토 결과와 검증 절차를 기록한다.
+  - 최종 검토와 로컬 검증 결과를 기록한다.
 
 ## 최종 정적 검토 결과
 
@@ -76,7 +78,7 @@
 - 절대경로, Drive 경로, UNC, `..`, NTFS ADS, NUL, Root 탈출을 거부한다.
 - 손상·읽기 불가 ZIP과 파일이 없는 ZIP을 거부한다.
 - 모든 파일 Entry Stream을 읽어 실제 크기와 ZIP 무결성을 확인한다.
-- B10 수정으로 디렉터리 Entry Stream도 확인하며 데이터 포함 디렉터리 Entry를 거부한다.
+- 디렉터리 Entry Stream도 확인하며 데이터 포함 디렉터리 Entry를 거부한다.
 - Published package URL은 덮어쓰지 않는다.
 - 실제 ZIP 바이너리를 DB에 저장하지 않는다.
 
@@ -114,51 +116,21 @@
 - Nginx는 `/api/internal/*`을 외부 404로 차단하고 packages autoindex를 비활성화한다.
 - package는 GET·HEAD만 허용하고 immutable cache와 `nosniff`를 설정한다.
 - 이미지 태그에 `latest`를 강제하지 않는다.
-- 실제 배포 환경 파일은 B10에서 Git 무시 대상으로 추가했다.
+- 실제 배포 환경 파일은 Git 무시 대상이다.
 
 ## 확인된 결함과 처리
 
-### 1. ZIP 디렉터리 Entry 검증 누락
+### ZIP 디렉터리 Entry 검증 누락
 
-기존 동작:
+기존에는 이름이 `/`로 끝나는 Entry를 디렉터리로 판단하고 Stream을 읽지 않았다. 데이터가 포함된 비정상 디렉터리 Entry가 실제 Stream 검증을 우회할 수 있으므로, 디렉터리 Entry도 Stream을 확인하고 데이터가 포함되면 `InvalidPackage`로 거부하도록 수정했다.
 
-```text
-Entry 이름이 /로 끝남
-→ 디렉터리로 판단
-→ Stream을 읽지 않고 continue
-```
+### 실제 배포 환경 파일 Git 제외 누락
 
-문제:
+실제 `deploy/update-server.env` 파일을 실수로 Git에 추가할 수 있었으므로 `deploy/.gitignore`를 추가했다. 예제 파일은 계속 추적한다.
 
-- 데이터가 포함된 비정상 디렉터리 Entry가 실제 Stream 검증을 우회할 수 있다.
-- 모든 Entry Stream 검증이라는 정책과 실제 구현이 일치하지 않는다.
+## 검증 결과
 
-처리:
-
-```text
-디렉터리 Entry도 실제 Stream 확인
-→ Length 또는 실제 읽은 데이터가 0이 아니면 InvalidPackage
-→ 파일 Entry만 전체 Expanded Bytes에 합산
-```
-
-### 2. 실제 배포 환경 파일 Git 제외 누락
-
-기존 상태:
-
-- `deploy/update-server.env.example`은 존재한다.
-- 실제 `deploy/update-server.env`을 무시하는 규칙은 없었다.
-
-문제:
-
-- DB 연결 문자열과 내부 서비스 키가 포함된 실제 파일을 실수로 Git에 추가할 수 있다.
-
-처리:
-
-- `deploy/.gitignore` 추가
-- `update-server.env`, `.env`, `.env.*` 제외
-- 예제 파일은 계속 추적
-
-## 검증 명령
+실행 명령:
 
 ```powershell
 cd D:\_work\POSCAM.UpdateServer
@@ -169,24 +141,12 @@ git pull
 dotnet restore POSCAM.UpdateServer.sln
 dotnet build POSCAM.UpdateServer.sln -c Release
 dotnet test POSCAM.UpdateServer.sln -c Release --no-build
-```
 
-B09의 293개 테스트에 ZIP 회귀 테스트 1개가 추가되므로 예상 전체 테스트 수는 294개이다.
-
-Docker 사용 가능 환경에서는 추가 검증:
-
-```powershell
 docker build -t poscam-update-server:b10-test .
 docker image inspect poscam-update-server:b10-test --format "{{.Config.User}}"
 ```
 
-Docker 실행 사용자 예상 결과:
-
-```text
-app
-```
-
-## 검증 기준
+결과:
 
 - Restore 성공
 - API Release 빌드 성공
@@ -196,15 +156,18 @@ app
 - 테스트 294/294 성공
 - 테스트 실패 0
 - 건너뜀 0
-- 가능한 경우 Docker build 성공
+- Docker image build 성공
 - Docker 실행 사용자 `app`
+
+테스트 실행 중 출력된 DB readiness `warn`과 `fail` 로그는 연결되지 않은 테스트용 DB가 `/health/ready`에서 `503 / Unhealthy`로 처리되는지를 확인하기 위한 의도된 테스트 로그이며 테스트 실패가 아니다.
 
 ## 남은 문제
 
-- 컴파일 오류: 로컬 검증 필요
-- 실제 동작 오류: 정적 검토에서 추가 발견 없음. 실제 MariaDB·IIS·Nginx·Docker Volume 통합은 운영 체크리스트에서 수행
+- 컴파일 오류: 없음
+- 실제 동작 오류: 정적 검토와 자동 테스트에서 추가 발견 없음
 - 불필요한 중복: 추가 발견 없음
-- 다음 단계 선행조건: Release 빌드와 전체 테스트 성공 후 C00 시작 가능
+- 운영 확인 사항: 실제 MariaDB·IIS·Nginx·Docker Volume 통합은 배포 체크리스트에서 수행
+- 다음 단계 선행조건: 충족, C00 시작 가능
 
 ## 정책 이탈 여부
 
