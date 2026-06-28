@@ -277,14 +277,13 @@ public sealed class UpdateCheckService : IUpdateCheckService
         packageUrl = string.Empty;
 
         if (string.IsNullOrWhiteSpace(storageKey)
-            || storageKey.StartsWith('/', StringComparison.Ordinal)
-            || storageKey.StartsWith('\\'))
+            || storageKey.StartsWith("/", StringComparison.Ordinal)
+            || storageKey.Contains('\\'))
         {
             return false;
         }
 
-        var normalizedStorageKey = storageKey.Replace('\\', '/');
-        var segments = normalizedStorageKey.Split(
+        var segments = storageKey.Split(
             '/',
             StringSplitOptions.RemoveEmptyEntries);
 
