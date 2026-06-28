@@ -1,0 +1,31 @@
+﻿
+Microsoft Visual Studio Solution File, Format Version 12.00
+# Visual Studio Version 17
+VisualStudioVersion = 17.14.36623.8
+MinimumVisualStudioVersion = 10.0.40219.1
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "POSCAM.UpdateServer.Api", "src\POSCAM.UpdateServer.Api\POSCAM.UpdateServer.Api.csproj", "{78752801-7FC0-53A2-402B-DEA95DB5E7A9}"
+EndProject
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "POSCAM.UpdateServer.Tests", "Tests\POSCAM.UpdateServer.Tests\POSCAM.UpdateServer.Tests.csproj", "{824BDDB5-C271-924F-F93D-A83DB8166719}"
+EndProject
+Global
+	GlobalSection(SolutionConfigurationPlatforms) = preSolution
+		Debug|Any CPU = Debug|Any CPU
+		Release|Any CPU = Release|Any CPU
+	EndGlobalSection
+	GlobalSection(ProjectConfigurationPlatforms) = postSolution
+		{78752801-7FC0-53A2-402B-DEA95DB5E7A9}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{78752801-7FC0-53A2-402B-DEA95DB5E7A9}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{78752801-7FC0-53A2-402B-DEA95DB5E7A9}.Release|Any CPU.ActiveCfg = Release|Any CPU
+		{78752801-7FC0-53A2-402B-DEA95DB5E7A9}.Release|Any CPU.Build.0 = Release|Any CPU
+		{824BDDB5-C271-924F-F93D-A83DB8166719}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{824BDDB5-C271-924F-F93D-A83DB8166719}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{824BDDB5-C271-924F-F93D-A83DB8166719}.Release|Any CPU.ActiveCfg = Release|Any CPU
+		{824BDDB5-C271-924F-F93D-A83DB8166719}.Release|Any CPU.Build.0 = Release|Any CPU
+	EndGlobalSection
+	GlobalSection(SolutionProperties) = preSolution
+		HideSolutionNode = FALSE
+	EndGlobalSection
+	GlobalSection(ExtensibilityGlobals) = postSolution
+		SolutionGuid = {DC0CC268-2DC9-467E-984B-E6AD84884898}
+	EndGlobalSection
+EndGlobal
