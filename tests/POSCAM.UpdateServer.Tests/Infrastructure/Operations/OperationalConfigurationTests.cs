@@ -28,13 +28,41 @@ public class OperationalConfigurationTests
         Assert.Contains("http://localhost:5001", origins);
     }
 
+    [Fact]
+    public void AreHttpsOrigins_운영Origin이_모두HTTPS인지_확인한다()
+    {
+        var httpsOnly = new AdminWebCorsOptions
+        {
+            AdminWebOrigins = new List<string>
+            {
+                "https://admin.example.com",
+                "https://support.example.com"
+            }
+        };
+        var includesHttp = new AdminWebCorsOptions
+        {
+            AdminWebOrigins = new List<string>
+            {
+                "https://admin.example.com",
+                "http://localhost:5001"
+            }
+        };
+
+        Assert.True(OperationalConfiguration.AreHttpsOrigins(httpsOnly));
+        Assert.False(OperationalConfiguration.AreHttpsOrigins(includesHttp));
+        Assert.False(
+            OperationalConfiguration.AreHttpsOrigins(new AdminWebCorsOptions()));
+    }
+
     [Theory]
     [InlineData("*")]
     [InlineData("https://*.example.com")]
     [InlineData("https://admin.example.com/path")]
     [InlineData("https://admin.example.com?query=1")]
+    [InlineData("https://user@admin.example.com")]
     [InlineData("ftp://admin.example.com")]
-    public void CorsOptions_와일드카드_경로_비HTTPOrigin을_거부한다(string origin)
+    public void CorsOptions_와일드카드_경로_사용자정보_비HTTPOrigin을_거부한다(
+        string origin)
     {
         var options = new AdminWebCorsOptions
         {
