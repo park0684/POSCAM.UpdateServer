@@ -82,8 +82,13 @@ builder.Services
     .Validate(
         options =>
             Uri.TryCreate(options.PublicBaseUrl, UriKind.Absolute, out var uri)
-            && (uri.Scheme == Uri.UriSchemeHttp || uri.Scheme == Uri.UriSchemeHttps),
-        "UpdateStorage:PublicBaseUrl은 유효한 HTTP 또는 HTTPS 절대 URL이어야 합니다.")
+            && (uri.Scheme == Uri.UriSchemeHttp || uri.Scheme == Uri.UriSchemeHttps)
+            && string.IsNullOrEmpty(uri.UserInfo)
+            && string.IsNullOrEmpty(uri.Query)
+            && string.IsNullOrEmpty(uri.Fragment)
+            && (!builder.Environment.IsProduction()
+                || uri.Scheme == Uri.UriSchemeHttps),
+        "UpdateStorage:PublicBaseUrl은 유효한 절대 URL이어야 하며 운영 환경에서는 HTTPS여야 합니다.")
     .ValidateOnStart();
 
 builder.Services
@@ -106,8 +111,8 @@ builder.Services
     .Validate(
         options =>
             !builder.Environment.IsProduction()
-            || OperationalConfiguration.GetNormalizedOrigins(options).Length > 0,
-        "운영 환경에는 Cors:AdminWebOrigins가 하나 이상 필요합니다.")
+            || OperationalConfiguration.AreHttpsOrigins(options),
+        "운영 환경에는 하나 이상의 HTTPS Cors:AdminWebOrigins가 필요합니다.")
     .ValidateOnStart();
 
 builder.Services
