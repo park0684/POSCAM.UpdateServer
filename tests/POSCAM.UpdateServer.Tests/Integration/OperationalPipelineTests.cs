@@ -118,6 +118,23 @@ public class OperationalPipelineTests
         Assert.DoesNotContain("auth", body, StringComparison.OrdinalIgnoreCase);
     }
 
+    [Fact]
+    public async Task ReadyHealth는_DB와_Storage만_포함하고_AuthServer를_제외한다()
+    {
+        using var factory = new OperationalWebApplicationFactory();
+        using var client = factory.CreateClient();
+
+        using var response = await client.GetAsync("/health/ready");
+        var body = await response.Content.ReadAsStringAsync();
+
+        Assert.Equal(HttpStatusCode.ServiceUnavailable, response.StatusCode);
+        Assert.Contains("\"name\":\"database\"", body, StringComparison.Ordinal);
+        Assert.Contains("\"name\":\"storage\"", body, StringComparison.Ordinal);
+        Assert.DoesNotContain("authserver", body, StringComparison.OrdinalIgnoreCase);
+        Assert.DoesNotContain("serviceKey", body, StringComparison.OrdinalIgnoreCase);
+        Assert.DoesNotContain("Pwd=", body, StringComparison.OrdinalIgnoreCase);
+    }
+
     private static HttpRequestMessage CreatePreflight(string origin)
     {
         var request = new HttpRequestMessage(
@@ -174,7 +191,7 @@ public class OperationalPipelineTests
                     new Dictionary<string, string?>
                     {
                         ["ConnectionStrings:DefaultConnection"] =
-                            "Server=localhost;Database=poscam_update;Uid=test;Pwd=test;",
+                            "Server=127.0.0.1;Port=1;Database=poscam_update;Uid=test;Pwd=test;ConnectionTimeout=1;",
                         ["UpdateStorage:RootPath"] = _storageRoot,
                         ["UpdateStorage:PublicBaseUrl"] =
                             "https://update.example.com",
