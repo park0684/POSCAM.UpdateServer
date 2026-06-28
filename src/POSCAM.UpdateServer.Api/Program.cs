@@ -25,18 +25,6 @@ var configuredMaxUploadBytes = builder.Configuration.GetValue<long?>(
 var multipartRequestLimit = configuredMaxUploadBytes <= long.MaxValue - 1_048_576L
     ? configuredMaxUploadBytes + 1_048_576L
     : configuredMaxUploadBytes;
-var configuredCors = builder.Configuration
-    .GetSection(AdminWebCorsOptions.SectionName)
-    .Get<AdminWebCorsOptions>() ?? new AdminWebCorsOptions();
-var configuredRateLimit = builder.Configuration
-    .GetSection(UpdateCheckRateLimitingOptions.SectionName)
-    .Get<UpdateCheckRateLimitingOptions>() ?? new UpdateCheckRateLimitingOptions();
-var configuredTrustedProxies = builder.Configuration
-    .GetSection(TrustedProxyOptions.SectionName)
-    .Get<TrustedProxyOptions>() ?? new TrustedProxyOptions();
-var normalizedAdminOrigins = OperationalConfiguration.GetNormalizedOrigins(
-    configuredCors);
-var productionEnvironment = builder.Environment.IsProduction();
 
 builder.WebHost.ConfigureKestrel(options =>
 {
@@ -50,6 +38,10 @@ builder.Services.Configure<FormOptions>(options =>
 
 builder.Services.Configure<ForwardedHeadersOptions>(options =>
 {
+    var configuredTrustedProxies = builder.Configuration
+        .GetSection(TrustedProxyOptions.SectionName)
+        .Get<TrustedProxyOptions>() ?? new TrustedProxyOptions();
+
     OperationalConfiguration.ApplyForwardedHeaders(
         options,
         configuredTrustedProxies);
@@ -101,10 +93,8 @@ builder.Services
     .Validate(
         options => OperationalConfiguration.IsValidAuthServerOptions(
             options,
-            productionEnvironment),
-        productionEnvironment
-            ? "AuthServer 설정과 32자 이상의 내부 서비스 키가 필요합니다."
-            : "AuthServer 설정이 올바르지 않습니다.")
+            builder.Environment.IsProduction()),
+        "AuthServer 설정이 올바르지 않습니다. 운영 환경에는 32자 이상의 내부 서비스 키가 필요합니다.")
     .ValidateOnStart();
 
 builder.Services
@@ -115,7 +105,7 @@ builder.Services
         "Cors:AdminWebOrigins에는 경로 없는 HTTP 또는 HTTPS Origin만 설정할 수 있습니다.")
     .Validate(
         options =>
-            !productionEnvironment
+            !builder.Environment.IsProduction()
             || OperationalConfiguration.GetNormalizedOrigins(options).Length > 0,
         "운영 환경에는 Cors:AdminWebOrigins가 하나 이상 필요합니다.")
     .ValidateOnStart();
@@ -128,7 +118,7 @@ builder.Services
         "ForwardedHeaders 설정이 올바르지 않습니다.")
     .Validate(
         options =>
-            !productionEnvironment
+            !builder.Environment.IsProduction()
             || options.KnownProxies.Any(value => !string.IsNullOrWhiteSpace(value)),
         "운영 환경에는 ForwardedHeaders:KnownProxies가 하나 이상 필요합니다.")
     .ValidateOnStart();
@@ -141,6 +131,12 @@ builder.Services
 
 builder.Services.AddCors(options =>
 {
+    var configuredCors = builder.Configuration
+        .GetSection(AdminWebCorsOptions.SectionName)
+        .Get<AdminWebCorsOptions>() ?? new AdminWebCorsOptions();
+    var normalizedAdminOrigins = OperationalConfiguration.GetNormalizedOrigins(
+        configuredCors);
+
     options.AddPolicy(
         OperationalPolicyNames.AdminWebCors,
         policy =>
@@ -167,6 +163,11 @@ builder.Services.AddCors(options =>
 
 builder.Services.AddRateLimiter(options =>
 {
+    var configuredRateLimit = builder.Configuration
+        .GetSection(UpdateCheckRateLimitingOptions.SectionName)
+        .Get<UpdateCheckRateLimitingOptions>()
+        ?? new UpdateCheckRateLimitingOptions();
+
     options.RejectionStatusCode = StatusCodes.Status429TooManyRequests;
     options.OnRejected = RateLimitResponseWriter.WriteRejectedAsync;
 
