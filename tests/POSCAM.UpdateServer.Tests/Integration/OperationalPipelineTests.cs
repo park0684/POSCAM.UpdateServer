@@ -131,10 +131,11 @@ public class OperationalPipelineTests
         return request;
     }
 
-    private static Task<HttpResponseMessage> PostUpdateCheckAsync(HttpClient client)
+    private static async Task<HttpResponseMessage> PostUpdateCheckAsync(
+        HttpClient client)
     {
         using var request = CreateUpdateCheckRequest();
-        return client.SendAsync(request);
+        return await client.SendAsync(request);
     }
 
     private static HttpRequestMessage CreateUpdateCheckRequest()
@@ -230,7 +231,7 @@ public class OperationalPipelineTests
                     {
                         UpdateAvailable = false,
                         Mandatory = false,
-                        ReasonCode = UpdateReasonCodes.AlreadyLatest,
+                        ReasonCode = "ALREADY_LATEST",
                         ProductCode = request?.ProductCode ?? ProductCodes.Pccam,
                         CurrentVersion = request?.CurrentVersion ?? "1.0.0",
                         Channel = request?.Channel ?? ReleaseChannels.Stable,
