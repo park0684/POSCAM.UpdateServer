@@ -20,6 +20,12 @@ public interface IUpdateReleaseRepository
         IDbTransaction? transaction = null,
         CancellationToken cancellationToken = default);
 
+    Task<bool> HasPublishedReleaseAsync(
+        string productCode,
+        string channel,
+        IDbTransaction? transaction = null,
+        CancellationToken cancellationToken = default);
+
     Task<long> CreateDraftAsync(
         UpdateRelease release,
         IDbTransaction? transaction = null,
