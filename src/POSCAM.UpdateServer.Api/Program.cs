@@ -39,6 +39,7 @@ builder.Services.Configure<ApiBehaviorOptions>(options =>
 
 builder.Services.AddEndpointsApiExplorer();
 builder.Services.AddSwaggerGen();
+builder.Services.AddHttpContextAccessor();
 
 builder.Services
     .AddOptions<UpdateStorageOptions>()
@@ -68,9 +69,11 @@ builder.Services
 builder.Services.AddSingleton<IDbContext, DapperContext>();
 builder.Services.AddScoped<IUpdateProductRepository, UpdateProductRepository>();
 builder.Services.AddScoped<IUpdateReleaseRepository, UpdateReleaseRepository>();
+builder.Services.AddScoped<IReleaseManagementQueryRepository, ReleaseManagementQueryRepository>();
 builder.Services.AddScoped<IUpdateArtifactRepository, UpdateArtifactRepository>();
 builder.Services.AddScoped<IUpdateAuditLogRepository, UpdateAuditLogRepository>();
 builder.Services.AddScoped<IUpdateCheckService, UpdateCheckService>();
+builder.Services.AddScoped<IReleaseManagementService, ReleaseManagementService>();
 
 builder.Services.AddScoped<IUpdateManagementActorAccessor, UpdateManagementActorAccessor>();
 builder.Services
