@@ -11,6 +11,7 @@ services:
     environment:
       ASPNETCORE_ENVIRONMENT: Production
       ASPNETCORE_URLS: http://+:8080
+      AllowedHosts: update.poscam.co.kr
       ConnectionStrings__DefaultConnection: ${UPDATE_DB_CONNECTION}
       UpdateStorage__RootPath: /app/update-storage
       UpdateStorage__PublicBaseUrl: https://update.poscam.co.kr
