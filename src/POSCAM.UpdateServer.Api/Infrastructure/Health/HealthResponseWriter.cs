@@ -13,9 +13,9 @@ public static class HealthResponseWriter
         HealthReport report)
     {
         context.Response.ContentType = "application/json; charset=utf-8";
-        context.Response.Headers.CacheControl = "no-store";
-        context.Response.Headers.Pragma = "no-cache";
-        context.Response.Headers.Expires = "0";
+        context.Response.Headers["Cache-Control"] = "no-store";
+        context.Response.Headers["Pragma"] = "no-cache";
+        context.Response.Headers["Expires"] = "0";
 
         var response = new
         {
