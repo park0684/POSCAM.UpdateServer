@@ -37,7 +37,7 @@
 
 - `Dockerfile`: .NET 8 multi-stage, non-root `app` 사용자
 - `.dockerignore`: Build context 제외 목록
-- `deploy/docker-compose.update.example.yml`: read-only root, tmpfs, trusted proxy, 명시 태그
+- `deploy/docker-compose.update.example.yml`: read-only root, tmpfs, IIS·Nginx 신뢰 프록시, 명시 태그
 - `deploy/update-server.env.example`: 의도적으로 유효하지 않은 Secret·Proxy placeholder
 - `deploy/nginx-update.example.conf`: API·Health Forwarded Headers와 Request ID
 - `deploy/deployment-checklist.md`: 운영 검증 체크리스트
@@ -57,9 +57,9 @@ Forwarded Headers
 → Controller
 ```
 
-이 순서의 목적:
+목적:
 
-- Rate Limit가 Nginx가 전달한 실제 Client IP를 사용한다.
+- Rate Limit가 신뢰된 IIS·Nginx 체인을 거친 실제 Client IP를 사용한다.
 - Request ID가 정상·오류·감사 로그 응답에 동일하게 연결된다.
 - CORS OPTIONS preflight가 관리자 인증 호출 전에 종료된다.
 - 요청 로그는 전역 예외 처리 이후 확정된 HTTP 상태를 기록한다.
@@ -89,21 +89,36 @@ POST /api/v1/updates/check
 
 - `Cors:AdminWebOrigins`에 등록된 정확한 Origin만 허용
 - 와일드카드 Origin 금지
-- 경로·Query·Fragment가 포함된 Origin 금지
+- 경로·Query·Fragment·사용자 정보가 포함된 Origin 금지
+- 운영 환경에서는 하나 이상의 HTTPS Origin 필수
 - 허용 Method: GET, POST, PUT, DELETE, OPTIONS
 - 허용 Header: Authorization, Content-Type, X-Request-ID
 - 노출 Header: X-Request-ID
 - Credentials 미허용
-- 운영 환경에서 Origin 목록이 없으면 시작 검증 실패
 
 ## Forwarded Headers
 
-- 처리 Header: X-Forwarded-For, X-Forwarded-Proto
-- 기본 ForwardLimit: 1
-- 설정한 단일 IP만 Known Proxy로 추가
+처리 Header:
+
+- X-Forwarded-For
+- X-Forwarded-Proto
+
+운영 배포 경로:
+
+```text
+외부 Client → IIS Reverse Proxy → Ubuntu Nginx → UpdateServer Container
+```
+
+운영 설정:
+
+- `ForwardedHeaders:KnownProxies:0` = 컨테이너가 직접 보는 Nginx/Docker Host IP
+- `ForwardedHeaders:KnownProxies:1` = X-Forwarded-For 체인의 IIS Proxy IP
+- `ForwardedHeaders:ForwardLimit` = 2
+- Nginx는 `$proxy_add_x_forwarded_for`로 IIS가 전달한 원본 Client IP 체인을 보존
 - `0.0.0.0`, `::`, Broadcast, 잘못된 IP 금지
-- 운영 환경에서 Known Proxy가 없으면 시작 검증 실패
-- 전체 Docker Network 또는 모든 프록시 신뢰 설정을 사용하지 않음
+- 전체 Docker Network나 광범위한 CIDR 신뢰 금지
+
+일반 단일 프록시 배포에서는 기본 `ForwardLimit=1`을 사용할 수 있지만, 현재 POSCAM 운영 예제는 2단계 프록시이므로 2를 명시한다.
 
 ## Health
 
@@ -126,15 +141,7 @@ GET /health/ready
 - `poscam_update` DB 연결과 `SELECT 1`
 - Artifact Storage `.staging` 쓰기·삭제 가능 여부
 
-AuthServer는 Ready 조건에서 제외한다. 따라서 AuthServer 장애가 공개 Update Check와 UpdateServer Ready 상태를 직접 중단하지 않는다.
-
-Health 응답에는 다음을 노출하지 않는다.
-
-- 연결 문자열
-- DB 비밀번호
-- 내부 서비스 키
-- 물리 Storage 경로
-- 원본 예외 메시지·Stack Trace
+AuthServer는 Ready 조건에서 제외한다. Health 응답에는 연결 문자열, 비밀번호, 내부 서비스 키, 물리 경로, 예외 메시지나 Stack Trace를 노출하지 않는다.
 
 ## Request ID·로그
 
@@ -158,7 +165,7 @@ A-Z a-z 0-9 - _ . :
 - Request ID
 - Remote IP Scope
 
-다음 값은 읽거나 기록하지 않는다.
+기록하지 않는 값:
 
 - Authorization
 - Cookie
@@ -171,11 +178,11 @@ A-Z a-z 0-9 - _ . :
 
 - 유효한 AuthServer BaseUrl
 - 32자 이상의 InternalServiceKey
-- 최소 1개 AdminWeb Origin
+- 최소 1개 HTTPS AdminWeb Origin
 - 최소 1개 신뢰 Proxy IP
 - 1~30초 AuthServer Timeout
 - 양수 Rate Limit 값
-- 유효한 UpdateStorage 설정
+- HTTPS PublicBaseUrl을 포함한 유효한 UpdateStorage 설정
 
 `deploy/update-server.env.example`의 `CHANGE_ME`는 의도적으로 검증을 통과하지 못하도록 유지한다.
 
@@ -197,13 +204,15 @@ A-Z a-z 0-9 - _ . :
 추가 테스트 범위:
 
 - 허용 Origin 관리자 preflight 성공
-- 허용되지 않은 Origin CORS Header 미반환
-- CORS가 관리자 인증보다 먼저 실행됨
+- 미허용 Origin CORS Header 미반환
+- CORS preflight 중 관리자 인증 Client 호출 0회
 - Update Check 고정 창 Rate Limit와 `429 / 9004`
 - 안전·위험 Request ID
+- 관리자 인증 실패 응답 Request ID 보존
 - Live에 DB·Storage·AuthServer 미포함
 - Ready에 DB·Storage 포함, AuthServer 제외
-- 와일드카드·경로·비HTTP Origin 차단
+- 와일드카드·경로·사용자 정보·비HTTP Origin 차단
+- 운영 Origin HTTPS 검증
 - 신뢰 Proxy IP와 ForwardLimit 검증
 - 운영 AuthServer 서비스 키 길이 검증
 - 요청 로그의 Authorization·Cookie·Service Key 제외
@@ -222,7 +231,7 @@ dotnet build POSCAM.UpdateServer.sln -c Release
 dotnet test POSCAM.UpdateServer.sln -c Release --no-build
 ```
 
-예상 전체 테스트 수는 약 290개이다. 정확한 개수보다 오류·경고·실패·건너뜀 여부가 우선이다.
+예상 전체 테스트 수는 약 293개이다. 정확한 개수보다 오류·경고·실패·건너뜀 여부가 우선이다.
 
 Docker가 설치된 환경에서는 추가 실행:
 
@@ -245,7 +254,7 @@ docker build -t poscam-update-server:b09-test .
 ## 남은 문제
 
 - 컴파일 오류: 로컬 검증 필요
-- 실제 동작 오류: 실제 MariaDB·Nginx·Docker Volume 연동은 B10 최종 검증 필요
+- 실제 동작 오류: 실제 MariaDB·IIS·Nginx·Docker Volume 연동은 B10 최종 검증 필요
 - 불필요한 중복: 정적 검토 완료
 - 다음 단계 선행조건: B09 Release 빌드·전체 테스트 성공
 
