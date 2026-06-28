@@ -118,10 +118,12 @@ public sealed partial class ArtifactUploadService : IArtifactUploadService
                 stagedFile,
                 cancellationToken);
 
+            // File.Move는 원자적인 짧은 작업이므로 클라이언트 취소와 분리한다.
+            // 이동 후 취소 예외가 발생해 최종 파일을 놓치는 상태를 방지한다.
             await _storageService.MoveToPackagesAsync(
                 stagedFile,
                 destination,
-                cancellationToken);
+                CancellationToken.None);
             finalFileMoved = true;
 
             await using var connection = await _dbContext.OpenConnectionAsync(cancellationToken);
@@ -138,13 +140,13 @@ public sealed partial class ArtifactUploadService : IArtifactUploadService
 
                 if (lockedRelease is null)
                 {
-                    await transaction.RollbackAsync(cancellationToken);
+                    await transaction.RollbackAsync(CancellationToken.None);
                     return ReleaseNotFound();
                 }
 
                 if (lockedRelease.ReleaseStatus != ReleaseStatus.Draft)
                 {
-                    await transaction.RollbackAsync(cancellationToken);
+                    await transaction.RollbackAsync(CancellationToken.None);
                     return InvalidReleaseState();
                 }
 
@@ -181,7 +183,7 @@ public sealed partial class ArtifactUploadService : IArtifactUploadService
 
                     if (!replacedRow)
                     {
-                        await transaction.RollbackAsync(cancellationToken);
+                        await transaction.RollbackAsync(CancellationToken.None);
 
                         return AdminServiceResult<ArtifactUploadResponse>.Fail(
                             StatusCodes.Status409Conflict,
@@ -200,7 +202,8 @@ public sealed partial class ArtifactUploadService : IArtifactUploadService
                     transaction,
                     cancellationToken);
 
-                await transaction.CommitAsync(cancellationToken);
+                // DB 변경이 준비된 뒤에는 클라이언트 연결 취소와 무관하게 Commit을 확정한다.
+                await transaction.CommitAsync(CancellationToken.None);
                 databaseCommitted = true;
 
                 if (existing is not null
