@@ -1,5 +1,7 @@
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
+using Microsoft.AspNetCore.RateLimiting;
+using POSCAM.UpdateServer.Api.Infrastructure.Operations;
 using POSCAM.UpdateServer.Api.Models.Common;
 using POSCAM.UpdateServer.Api.Models.Dtos.Updates;
 using POSCAM.UpdateServer.Api.Models.Enums;
@@ -24,9 +26,11 @@ public sealed class UpdatesController : ControllerBase
     /// </summary>
     [HttpPost("check")]
     [AllowAnonymous]
+    [EnableRateLimiting(OperationalPolicyNames.UpdateCheckRateLimit)]
     [ResponseCache(NoStore = true, Location = ResponseCacheLocation.None)]
     [ProducesResponseType(typeof(ApiResponse<UpdateCheckResponse>), StatusCodes.Status200OK)]
     [ProducesResponseType(typeof(ApiResponse<UpdateCheckResponse>), StatusCodes.Status400BadRequest)]
+    [ProducesResponseType(typeof(ApiResponse<object?>), StatusCodes.Status429TooManyRequests)]
     [ProducesResponseType(typeof(ApiResponse<UpdateCheckResponse>), StatusCodes.Status500InternalServerError)]
     public async Task<ActionResult<ApiResponse<UpdateCheckResponse>>> CheckAsync(
         [FromBody] UpdateCheckRequest? request,
