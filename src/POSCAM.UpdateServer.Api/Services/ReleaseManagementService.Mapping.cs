@@ -4,6 +4,7 @@ using POSCAM.UpdateServer.Api.Models.Authorization;
 using POSCAM.UpdateServer.Api.Models.Domain;
 using POSCAM.UpdateServer.Api.Models.Dtos.Admin.Releases;
 using POSCAM.UpdateServer.Api.Models.Entities;
+using POSCAM.UpdateServer.Api.Models.Enums;
 
 namespace POSCAM.UpdateServer.Api.Services;
 
@@ -66,7 +67,7 @@ public sealed partial class ReleaseManagementService
             IsMandatory = mutation.IsMandatory,
             ReleaseNotes = NormalizeOptionalText(releaseNotes),
             InternalMemo = NormalizeOptionalText(internalMemo),
-            ReleaseStatus = Models.Enums.ReleaseStatus.Draft,
+            ReleaseStatus = ReleaseStatus.Draft,
             CreatedByUserCode = actor.UserCode,
             CreatedByUserName = Truncate(actor.UserName, 100)
         };
