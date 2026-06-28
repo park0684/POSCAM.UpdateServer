@@ -25,6 +25,10 @@ public class GlobalExceptionHandlingMiddlewareTests
         Assert.False(response.Success);
         Assert.Equal((int)UpdateErrorCode.UnknownError, response.ErrorCode);
         Assert.DoesNotContain("외부에 노출되면 안 되는 상세 오류", response.Message);
+        Assert.Equal(
+            "request-test",
+            context.Response.Headers[RequestIdMiddleware.HeaderName].ToString());
+        Assert.Equal("no-store", context.Response.Headers["Cache-Control"].ToString());
     }
 
     [Fact]
