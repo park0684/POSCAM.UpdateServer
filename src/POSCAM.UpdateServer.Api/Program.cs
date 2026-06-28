@@ -1,11 +1,16 @@
 using System.Text.Json;
+using System.Threading.RateLimiting;
 using Microsoft.AspNetCore.Diagnostics.HealthChecks;
 using Microsoft.AspNetCore.Http.Features;
+using Microsoft.AspNetCore.HttpOverrides;
 using Microsoft.AspNetCore.Mvc;
+using Microsoft.AspNetCore.RateLimiting;
 using Microsoft.Extensions.Diagnostics.HealthChecks;
 using POSCAM.UpdateServer.Api.Authorization;
 using POSCAM.UpdateServer.Api.Infrastructure.Database;
+using POSCAM.UpdateServer.Api.Infrastructure.Health;
 using POSCAM.UpdateServer.Api.Infrastructure.Middleware;
+using POSCAM.UpdateServer.Api.Infrastructure.Operations;
 using POSCAM.UpdateServer.Api.Models.Common;
 using POSCAM.UpdateServer.Api.Models.Enums;
 using POSCAM.UpdateServer.Api.Options;
@@ -20,6 +25,18 @@ var configuredMaxUploadBytes = builder.Configuration.GetValue<long?>(
 var multipartRequestLimit = configuredMaxUploadBytes <= long.MaxValue - 1_048_576L
     ? configuredMaxUploadBytes + 1_048_576L
     : configuredMaxUploadBytes;
+var configuredCors = builder.Configuration
+    .GetSection(AdminWebCorsOptions.SectionName)
+    .Get<AdminWebCorsOptions>() ?? new AdminWebCorsOptions();
+var configuredRateLimit = builder.Configuration
+    .GetSection(UpdateCheckRateLimitingOptions.SectionName)
+    .Get<UpdateCheckRateLimitingOptions>() ?? new UpdateCheckRateLimitingOptions();
+var configuredTrustedProxies = builder.Configuration
+    .GetSection(TrustedProxyOptions.SectionName)
+    .Get<TrustedProxyOptions>() ?? new TrustedProxyOptions();
+var normalizedAdminOrigins = OperationalConfiguration.GetNormalizedOrigins(
+    configuredCors);
+var productionEnvironment = builder.Environment.IsProduction();
 
 builder.WebHost.ConfigureKestrel(options =>
 {
@@ -29,6 +46,13 @@ builder.WebHost.ConfigureKestrel(options =>
 builder.Services.Configure<FormOptions>(options =>
 {
     options.MultipartBodyLengthLimit = multipartRequestLimit;
+});
+
+builder.Services.Configure<ForwardedHeadersOptions>(options =>
+{
+    OperationalConfiguration.ApplyForwardedHeaders(
+        options,
+        configuredTrustedProxies);
 });
 
 builder.Services
@@ -72,17 +96,95 @@ builder.Services
 
 builder.Services
     .AddOptions<AuthServerOptions>()
-    .Bind(builder.Configuration.GetSection(AuthServerOptions.SectionName));
+    .Bind(builder.Configuration.GetSection(AuthServerOptions.SectionName))
+    .ValidateDataAnnotations()
+    .Validate(
+        options => OperationalConfiguration.IsValidAuthServerOptions(
+            options,
+            productionEnvironment),
+        productionEnvironment
+            ? "AuthServer 설정과 32자 이상의 내부 서비스 키가 필요합니다."
+            : "AuthServer 설정이 올바르지 않습니다.")
+    .ValidateOnStart();
 
 builder.Services
     .AddOptions<AdminWebCorsOptions>()
-    .Bind(builder.Configuration.GetSection(AdminWebCorsOptions.SectionName));
+    .Bind(builder.Configuration.GetSection(AdminWebCorsOptions.SectionName))
+    .Validate(
+        OperationalConfiguration.IsValidCorsOptions,
+        "Cors:AdminWebOrigins에는 경로 없는 HTTP 또는 HTTPS Origin만 설정할 수 있습니다.")
+    .Validate(
+        options =>
+            !productionEnvironment
+            || OperationalConfiguration.GetNormalizedOrigins(options).Length > 0,
+        "운영 환경에는 Cors:AdminWebOrigins가 하나 이상 필요합니다.")
+    .ValidateOnStart();
+
+builder.Services
+    .AddOptions<TrustedProxyOptions>()
+    .Bind(builder.Configuration.GetSection(TrustedProxyOptions.SectionName))
+    .Validate(
+        OperationalConfiguration.IsValidTrustedProxyOptions,
+        "ForwardedHeaders 설정이 올바르지 않습니다.")
+    .Validate(
+        options =>
+            !productionEnvironment
+            || options.KnownProxies.Any(value => !string.IsNullOrWhiteSpace(value)),
+        "운영 환경에는 ForwardedHeaders:KnownProxies가 하나 이상 필요합니다.")
+    .ValidateOnStart();
 
 builder.Services
     .AddOptions<UpdateCheckRateLimitingOptions>()
     .Bind(builder.Configuration.GetSection(UpdateCheckRateLimitingOptions.SectionName))
     .ValidateDataAnnotations()
     .ValidateOnStart();
+
+builder.Services.AddCors(options =>
+{
+    options.AddPolicy(
+        OperationalPolicyNames.AdminWebCors,
+        policy =>
+        {
+            if (normalizedAdminOrigins.Length > 0)
+            {
+                policy.WithOrigins(normalizedAdminOrigins);
+            }
+            else
+            {
+                policy.SetIsOriginAllowed(_ => false);
+            }
+
+            policy
+                .WithMethods("GET", "POST", "PUT", "DELETE", "OPTIONS")
+                .WithHeaders(
+                    "Authorization",
+                    "Content-Type",
+                    RequestIdMiddleware.HeaderName)
+                .WithExposedHeaders(RequestIdMiddleware.HeaderName)
+                .SetPreflightMaxAge(TimeSpan.FromMinutes(10));
+        });
+});
+
+builder.Services.AddRateLimiter(options =>
+{
+    options.RejectionStatusCode = StatusCodes.Status429TooManyRequests;
+    options.OnRejected = RateLimitResponseWriter.WriteRejectedAsync;
+
+    options.AddPolicy(
+        OperationalPolicyNames.UpdateCheckRateLimit,
+        httpContext => RateLimitPartition.GetFixedWindowLimiter(
+            partitionKey: httpContext.Connection.RemoteIpAddress?.ToString()
+                          ?? "unknown",
+            factory: _ => new FixedWindowRateLimiterOptions
+            {
+                PermitLimit = configuredRateLimit.UpdateCheckPermitLimit,
+                Window = TimeSpan.FromSeconds(
+                    configuredRateLimit.UpdateCheckWindowSeconds),
+                QueueLimit = 0,
+                QueueProcessingOrder = QueueProcessingOrder.OldestFirst,
+                AutoReplenishment = true
+            }));
+});
 
 builder.Services.AddSingleton<IDbContext, DapperContext>();
 builder.Services.AddScoped<IUpdateProductRepository, UpdateProductRepository>();
@@ -112,12 +214,24 @@ builder.Services
     .AddCheck(
         "self",
         () => HealthCheckResult.Healthy(),
-        tags: new[] { "live" });
+        tags: new[] { "live" })
+    .AddCheck<DatabaseReadyHealthCheck>(
+        "database",
+        failureStatus: HealthStatus.Unhealthy,
+        tags: new[] { "ready" })
+    .AddCheck<StorageReadyHealthCheck>(
+        "storage",
+        failureStatus: HealthStatus.Unhealthy,
+        tags: new[] { "ready" });
 
 var app = builder.Build();
 
+app.UseForwardedHeaders();
 app.UseMiddleware<RequestIdMiddleware>();
+app.UseMiddleware<RequestLoggingMiddleware>();
 app.UseMiddleware<GlobalExceptionHandlingMiddleware>();
+app.UseCors(OperationalPolicyNames.AdminWebCors);
+app.UseRateLimiter();
 app.UseMiddleware<UpdateManagementAuthorizationMiddleware>();
 
 if (app.Environment.IsDevelopment())
@@ -132,7 +246,16 @@ app.MapHealthChecks(
     "/health/live",
     new HealthCheckOptions
     {
-        Predicate = registration => registration.Tags.Contains("live")
+        Predicate = registration => registration.Tags.Contains("live"),
+        ResponseWriter = HealthResponseWriter.WriteAsync
+    });
+
+app.MapHealthChecks(
+    "/health/ready",
+    new HealthCheckOptions
+    {
+        Predicate = registration => registration.Tags.Contains("ready"),
+        ResponseWriter = HealthResponseWriter.WriteAsync
     });
 
 app.Run();
