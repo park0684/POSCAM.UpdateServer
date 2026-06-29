@@ -20,6 +20,13 @@ using POSCAM.UpdateServer.Api.Storage;
 
 var builder = WebApplication.CreateBuilder(args);
 
+// Docker Compose에서 /run/secrets에 마운트한 Secret 파일을
+// 일반 ASP.NET Core 구성 키로 읽는다.
+// 개발환경에서는 Secret 디렉터리가 없어도 실행할 수 있다.
+builder.Configuration.AddKeyPerFile(
+    directoryPath: "/run/secrets",
+    optional: true);
+
 var configuredMaxUploadBytes = builder.Configuration.GetValue<long?>(
     $"{UpdateStorageOptions.SectionName}:MaxUploadBytes") ?? 1_073_741_824L;
 var multipartRequestLimit = configuredMaxUploadBytes <= long.MaxValue - 1_048_576L
