@@ -209,12 +209,19 @@ public sealed partial class ArtifactUploadService : IArtifactUploadService
                     }
                 }
 
+                var savedArtifact = await _artifactRepository.GetByCodeAsync(
+                    artifact.ArtifactCode,
+                    transaction,
+                    cancellationToken)
+                    ?? throw new System.InvalidOperationException(
+                        "Saved Artifact could not be reloaded.");
+
                 await CreateAuditAsync(
                     replaced
                         ? AuditActions.ReplaceDraftArtifact
                         : AuditActions.Upload,
                     existing,
-                    artifact,
+                    savedArtifact,
                     actor,
                     transaction,
                     cancellationToken);
@@ -226,7 +233,7 @@ public sealed partial class ArtifactUploadService : IArtifactUploadService
                 if (existing is not null
                     && !string.Equals(
                         existing.StorageKey,
-                        artifact.StorageKey,
+                        savedArtifact.StorageKey,
                         StringComparison.Ordinal))
                 {
                     var oldFileRemoved = await _storageService.RemoveOrQuarantineAsync(
@@ -243,7 +250,7 @@ public sealed partial class ArtifactUploadService : IArtifactUploadService
                 }
 
                 return AdminServiceResult<ArtifactUploadResponse>.Ok(
-                    MapResponse(artifact, replaced),
+                    MapResponse(savedArtifact, replaced),
                     replaced
                         ? "Draft Artifact를 교체했습니다."
                         : "Draft Artifact를 업로드했습니다.",
