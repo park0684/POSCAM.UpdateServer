@@ -188,16 +188,17 @@ public sealed class ArtifactFileManifestService : IArtifactFileManifestService
         {
             try
             {
-                if (string.IsNullOrWhiteSpace(file.PhysicalPath))
+                var physicalPath = ResolveManifestPhysicalPath(file);
+                if (physicalPath is null)
                 {
                     continue;
                 }
 
-                EnsurePathInside(_packagesPath, file.PhysicalPath);
+                EnsurePathInside(_packagesPath, physicalPath);
 
-                if (File.Exists(file.PhysicalPath))
+                if (File.Exists(physicalPath))
                 {
-                    File.Delete(file.PhysicalPath);
+                    File.Delete(physicalPath);
                 }
             }
             catch (Exception exception)
@@ -213,6 +214,21 @@ public sealed class ArtifactFileManifestService : IArtifactFileManifestService
         }
 
         return Task.CompletedTask;
+    }
+
+    private string? ResolveManifestPhysicalPath(ArtifactFileManifestEntry file)
+    {
+        if (!string.IsNullOrWhiteSpace(file.PhysicalPath))
+        {
+            return file.PhysicalPath;
+        }
+
+        if (!string.IsNullOrWhiteSpace(file.StorageKey))
+        {
+            return ResolveStorageKey(_packagesPath, file.StorageKey);
+        }
+
+        return null;
     }
 
     private static async Task<(long FileSize, string Sha256)> WriteEntryToFileAsync(
