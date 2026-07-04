@@ -18,15 +18,18 @@ public sealed class UpdateCheckService : IUpdateCheckService
 {
     private readonly IUpdateProductRepository _productRepository;
     private readonly IUpdateReleaseRepository _releaseRepository;
+    private readonly IUpdateArtifactFileRepository _artifactFileRepository;
     private readonly UpdateStorageOptions _storageOptions;
 
     public UpdateCheckService(
         IUpdateProductRepository productRepository,
         IUpdateReleaseRepository releaseRepository,
+        IUpdateArtifactFileRepository artifactFileRepository,
         IOptions<UpdateStorageOptions> storageOptions)
     {
         _productRepository = productRepository;
         _releaseRepository = releaseRepository;
+        _artifactFileRepository = artifactFileRepository;
         _storageOptions = storageOptions.Value;
     }
 
@@ -85,9 +88,10 @@ public sealed class UpdateCheckService : IUpdateCheckService
                 cancellationToken);
         }
 
-        return CreateCompatibleReleaseResult(
+        return await CreateCompatibleReleaseResultAsync(
             currentVersion,
-            compatibleRelease);
+            compatibleRelease,
+            cancellationToken);
     }
 
     private async Task<UpdateCheckServiceResult> CreateNoReleaseResultAsync(
@@ -129,15 +133,17 @@ public sealed class UpdateCheckService : IUpdateCheckService
             FileSize = null,
             Sha256 = null,
             ReleaseNotes = null,
-            PublishedAt = null
+            PublishedAt = null,
+            Files = Array.Empty<UpdateArtifactFileResponse>()
         };
 
         return UpdateCheckServiceResult.Ok(response, message);
     }
 
-    private UpdateCheckServiceResult CreateCompatibleReleaseResult(
+    private async Task<UpdateCheckServiceResult> CreateCompatibleReleaseResultAsync(
         UpdateVersion currentVersion,
-        CompatibleReleaseArtifact release)
+        CompatibleReleaseArtifact release,
+        CancellationToken cancellationToken)
     {
         if (!UpdateVersion.TryCreate(
                 release.VersionMajor,
@@ -183,6 +189,15 @@ public sealed class UpdateCheckService : IUpdateCheckService
             return InvalidStoredData();
         }
 
+        var artifactFiles = await _artifactFileRepository.GetActiveByArtifactAsync(
+            release.ArtifactCode,
+            cancellationToken: cancellationToken);
+
+        if (!TryMapArtifactFiles(artifactFiles, out var files))
+        {
+            return InvalidStoredData();
+        }
+
         var decision = UpdateDecisionEvaluator.Evaluate(
             currentVersion,
             policy);
@@ -205,7 +220,8 @@ public sealed class UpdateCheckService : IUpdateCheckService
             FileSize = release.FileSize,
             Sha256 = release.Sha256,
             ReleaseNotes = release.ReleaseNotes,
-            PublishedAt = AsUtc(release.PublishedAt)
+            PublishedAt = AsUtc(release.PublishedAt),
+            Files = files
         };
 
         var message = decision.UpdateAvailable
@@ -268,6 +284,34 @@ public sealed class UpdateCheckService : IUpdateCheckService
         }
 
         return null;
+    }
+
+    private bool TryMapArtifactFiles(
+        IReadOnlyList<UpdateArtifactFile> artifactFiles,
+        out IReadOnlyList<UpdateArtifactFileResponse> files)
+    {
+        var mappedFiles = new List<UpdateArtifactFileResponse>(artifactFiles.Count);
+
+        foreach (var file in artifactFiles)
+        {
+            if (!TryBuildPackageUrl(file.StorageKey, out var downloadUrl))
+            {
+                files = Array.Empty<UpdateArtifactFileResponse>();
+                return false;
+            }
+
+            mappedFiles.Add(new UpdateArtifactFileResponse
+            {
+                Path = file.FilePath,
+                Size = file.FileSize,
+                Sha256 = file.Sha256,
+                Required = file.IsRequired,
+                DownloadUrl = downloadUrl
+            });
+        }
+
+        files = mappedFiles;
+        return true;
     }
 
     private bool TryBuildPackageUrl(
