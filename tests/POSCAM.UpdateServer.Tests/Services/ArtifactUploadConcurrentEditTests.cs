@@ -30,8 +30,10 @@ public class ArtifactUploadConcurrentEditTests
             LockedRelease = lockedRelease
         };
         var artifactRepository = new FakeArtifactRepository();
+        var artifactFileRepository = new FakeArtifactFileRepository();
         var auditRepository = new FakeAuditLogRepository();
         var storage = new FakeArtifactStorageService();
+        var manifestService = new FakeArtifactFileManifestService();
         var actorAccessor = new UpdateManagementActorAccessor();
         actorAccessor.SetActor(new UpdateManagementActor
         {
@@ -45,6 +47,7 @@ public class ArtifactUploadConcurrentEditTests
             releaseRepository,
             releaseQueryRepository,
             artifactRepository,
+            artifactFileRepository,
             new FakeArtifactManagementQueryRepository(),
             auditRepository,
             actorAccessor,
@@ -56,6 +59,7 @@ public class ArtifactUploadConcurrentEditTests
                 }
             },
             storage,
+            manifestService,
             Options.Create(new UpdateStorageOptions
             {
                 RootPath = "/test-only",
@@ -73,9 +77,11 @@ public class ArtifactUploadConcurrentEditTests
         Assert.Equal(UpdateErrorCode.InvalidReleaseState, result.ErrorCode);
         Assert.True(dbContext.Connection.LastTransaction!.RolledBack);
         Assert.Null(artifactRepository.LastCreatedArtifact);
+        Assert.Empty(artifactFileRepository.CreatedFiles);
         Assert.Empty(auditRepository.CreatedLogs);
         Assert.Single(storage.RemovedStorageKeys);
         Assert.Equal(storage.Destination.StorageKey, storage.RemovedStorageKeys[0]);
+        Assert.Single(manifestService.DeletedManifests);
     }
 
     private static ArtifactUploadRequest CreateRequest()
