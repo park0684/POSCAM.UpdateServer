@@ -39,4 +39,20 @@ public sealed class UpdateCheckResponse
     public string? ReleaseNotes { get; init; }
 
     public DateTime? PublishedAt { get; init; }
+
+    public IReadOnlyList<UpdateArtifactFileResponse> Files { get; init; } =
+        Array.Empty<UpdateArtifactFileResponse>();
+}
+
+public sealed class UpdateArtifactFileResponse
+{
+    public string Path { get; init; } = string.Empty;
+
+    public long Size { get; init; }
+
+    public string Sha256 { get; init; } = string.Empty;
+
+    public bool Required { get; init; }
+
+    public string DownloadUrl { get; init; } = string.Empty;
 }
