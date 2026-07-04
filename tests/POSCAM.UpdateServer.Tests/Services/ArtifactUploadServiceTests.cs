@@ -33,11 +33,16 @@ public class ArtifactUploadServiceTests
         Assert.Equal("new-public-id", result.Data.PublicId);
         Assert.Equal(1234, result.Data.FileSize);
         Assert.Equal(new string('a', 64), result.Data.Sha256);
+        Assert.Equal(1, result.Data.ManifestFileCount);
 
         var artifact = fixture.ArtifactRepository.LastCreatedArtifact;
         Assert.NotNull(artifact);
         Assert.Equal("application/zip", artifact.ContentType);
         Assert.Equal(ArtifactStatus.Active, artifact.ArtifactStatus);
+
+        var manifestFile = Assert.Single(fixture.ArtifactFileRepository.CreatedFiles);
+        Assert.Equal(200, manifestFile.ArtifactCode);
+        Assert.Equal("PCCAM.exe", manifestFile.FilePath);
 
         var audit = Assert.Single(fixture.AuditRepository.CreatedLogs);
         Assert.Equal(AuditActions.Upload, audit.Action);
@@ -53,6 +58,8 @@ public class ArtifactUploadServiceTests
         Assert.Equal(1, fixture.Storage.ValidateCallCount);
         Assert.Equal(1, fixture.Storage.MoveCallCount);
         Assert.Equal(1, fixture.Storage.DeleteStagingCallCount);
+        Assert.Equal(1, fixture.ManifestService.CreateCallCount);
+        Assert.Empty(fixture.ManifestService.DeletedManifests);
     }
 
     [Fact]
@@ -60,6 +67,21 @@ public class ArtifactUploadServiceTests
     {
         var fixture = CreateFixture();
         fixture.ArtifactQuery.LockedArtifact = CreateExistingArtifact();
+        fixture.ArtifactFileRepository.Files = new[]
+        {
+            new UpdateArtifactFile
+            {
+                ArtifactCode = 300,
+                PublicId = "old-manifest-public-id",
+                FilePath = "PCCAM.exe",
+                FileSize = 10,
+                Sha256 = new string('d', 64),
+                StorageKey = "pccam/stable/1.0.0/old-public-id/files/old-manifest-public-id",
+                DownloadPath = "pccam/stable/1.0.0/old-public-id/files/old-manifest-public-id",
+                IsRequired = true,
+                FileStatus = ArtifactFileStatus.Active
+            }
+        };
 
         var result = await fixture.Service.UploadAsync(10, CreateRequest());
 
@@ -68,7 +90,11 @@ public class ArtifactUploadServiceTests
         Assert.True(result.Data!.Replaced);
         Assert.Equal(300, result.Data.ArtifactCode);
         Assert.Equal("new-public-id", result.Data.PublicId);
+        Assert.Equal(1, result.Data.ManifestFileCount);
         Assert.NotNull(fixture.ArtifactRepository.LastReplacedArtifact);
+        Assert.Contains(300, fixture.ArtifactFileRepository.DeletedArtifactCodes);
+        Assert.Single(fixture.ArtifactFileRepository.CreatedFiles);
+        Assert.Single(fixture.ManifestService.DeletedManifests);
 
         var audit = Assert.Single(fixture.AuditRepository.CreatedLogs);
         Assert.Equal(AuditActions.ReplaceDraftArtifact, audit.Action);
@@ -96,6 +122,7 @@ public class ArtifactUploadServiceTests
         Assert.Equal(StatusCodes.Status409Conflict, result.HttpStatusCode);
         Assert.Equal(UpdateErrorCode.InvalidReleaseState, result.ErrorCode);
         Assert.Equal(0, fixture.Storage.SaveCallCount);
+        Assert.Equal(0, fixture.ManifestService.CreateCallCount);
         Assert.Null(fixture.DbContext.Connection.LastTransaction);
     }
 
@@ -113,6 +140,7 @@ public class ArtifactUploadServiceTests
             fixture.Storage.Destination.StorageKey,
             fixture.Storage.RemovedStorageKeys);
         Assert.Null(fixture.ArtifactRepository.LastCreatedArtifact);
+        Assert.Single(fixture.ManifestService.DeletedManifests);
     }
 
     [Fact]
@@ -130,6 +158,7 @@ public class ArtifactUploadServiceTests
         Assert.Equal(UpdateErrorCode.InvalidPackage, result.ErrorCode);
         Assert.Null(fixture.DbContext.Connection.LastTransaction);
         Assert.Equal(0, fixture.Storage.MoveCallCount);
+        Assert.Equal(0, fixture.ManifestService.CreateCallCount);
         Assert.Equal(1, fixture.Storage.DeleteStagingCallCount);
     }
 
@@ -152,6 +181,7 @@ public class ArtifactUploadServiceTests
         Assert.Contains(
             fixture.Storage.Destination.StorageKey,
             fixture.Storage.RemovedStorageKeys);
+        Assert.Single(fixture.ManifestService.DeletedManifests);
         Assert.Empty(fixture.AuditRepository.CreatedLogs);
     }
 
@@ -167,6 +197,7 @@ public class ArtifactUploadServiceTests
         Assert.Equal(StatusCodes.Status413PayloadTooLarge, result.HttpStatusCode);
         Assert.Equal(UpdateErrorCode.FileTooLarge, result.ErrorCode);
         Assert.Equal(0, fixture.Storage.SaveCallCount);
+        Assert.Equal(0, fixture.ManifestService.CreateCallCount);
     }
 
     [Theory]
@@ -190,6 +221,7 @@ public class ArtifactUploadServiceTests
         Assert.False(result.Success);
         Assert.Equal(expectedError, result.ErrorCode);
         Assert.Equal(0, fixture.Storage.SaveCallCount);
+        Assert.Equal(0, fixture.ManifestService.CreateCallCount);
     }
 
     [Fact]
@@ -204,6 +236,7 @@ public class ArtifactUploadServiceTests
         Assert.Equal(StatusCodes.Status415UnsupportedMediaType, result.HttpStatusCode);
         Assert.Equal(UpdateErrorCode.InvalidPackage, result.ErrorCode);
         Assert.Equal(0, fixture.Storage.SaveCallCount);
+        Assert.Equal(0, fixture.ManifestService.CreateCallCount);
     }
 
     private static Fixture CreateFixture(
@@ -223,6 +256,7 @@ public class ArtifactUploadServiceTests
             LockedRelease = lockedRelease
         };
         var artifactRepository = new FakeArtifactRepository();
+        var artifactFileRepository = new FakeArtifactFileRepository();
         var artifactQuery = new FakeArtifactManagementQueryRepository();
         var auditRepository = new FakeAuditLogRepository();
         var actorAccessor = new UpdateManagementActorAccessor();
@@ -241,6 +275,7 @@ public class ArtifactUploadServiceTests
         httpContext.Request.Headers["User-Agent"] = "B07-Test";
 
         var storage = new FakeArtifactStorageService();
+        var manifestService = new FakeArtifactFileManifestService();
         var options = Options.Create(new UpdateStorageOptions
         {
             RootPath = "/test-only",
@@ -255,11 +290,13 @@ public class ArtifactUploadServiceTests
             releaseRepository,
             releaseQuery,
             artifactRepository,
+            artifactFileRepository,
             artifactQuery,
             auditRepository,
             actorAccessor,
             new HttpContextAccessor { HttpContext = httpContext },
             storage,
+            manifestService,
             options,
             NullLogger<ArtifactUploadService>.Instance);
 
@@ -267,9 +304,11 @@ public class ArtifactUploadServiceTests
             service,
             dbContext,
             artifactRepository,
+            artifactFileRepository,
             artifactQuery,
             auditRepository,
-            storage);
+            storage,
+            manifestService);
     }
 
     private static ArtifactUploadRequest CreateRequest(
@@ -340,7 +379,9 @@ public class ArtifactUploadServiceTests
         ArtifactUploadService Service,
         FakeDbContext DbContext,
         FakeArtifactRepository ArtifactRepository,
+        FakeArtifactFileRepository ArtifactFileRepository,
         FakeArtifactManagementQueryRepository ArtifactQuery,
         FakeAuditLogRepository AuditRepository,
-        FakeArtifactStorageService Storage);
+        FakeArtifactStorageService Storage,
+        FakeArtifactFileManifestService ManifestService);
 }
