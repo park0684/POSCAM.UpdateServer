@@ -13,6 +13,6 @@
 | B08 | 게시·감사 | Completed | Release 성공, 경고 0 | 257/257 성공 | Publish·Disable·Quarantine·Audit API, Storage 재검증·격리, tests, B08 보고서 | 사용자 로컬 검증 완료 |
 | B09 | 운영 기능 | Completed | Release 성공, 경고 0 | 293/293 성공 | Rate Limit, 제한 CORS, live·ready, Forwarded Headers, Request 로그, Dockerfile, tests | 사용자 로컬 검증 완료 |
 | B10 | 최종 검증 | Completed | Release 성공, 경고 0 | 294/294 성공 | ZIP 디렉터리 Entry 검증, deploy Secret ignore, B10 보고서 | Docker build 성공, 실행 사용자 app 확인 |
-| B11 | Manifest 파일별 복구 업데이트 | Pending | - | - | docs/manifest-repair-update-policy.md, codex/prompts/B11_IMPLEMENT_MANIFEST_REPAIR_UPDATE.md | B07/B08 이후 진행 |
+| B11 | Manifest 파일별 복구 업데이트 | InProgress | - | - | docs/manifest-repair-update-policy.md, codex/prompts/B11_IMPLEMENT_MANIFEST_REPAIR_UPDATE.md, codex/reports/B11_CURRENT_CODE_ANALYSIS.md | 현재 코드 분석 완료, 사용자 확인 전 기능 코드 수정 없음 |
 
 상태값: `Pending`, `InProgress`, `Completed`, `Blocked`
