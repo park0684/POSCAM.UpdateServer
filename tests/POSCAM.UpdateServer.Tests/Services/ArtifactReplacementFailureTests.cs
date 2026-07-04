@@ -37,12 +37,31 @@ public class ArtifactReplacementFailureTests
                 "duplicate",
                 new Exception("provider"))
         };
+        var artifactFileRepository = new FakeArtifactFileRepository
+        {
+            Files = new[]
+            {
+                new UpdateArtifactFile
+                {
+                    ArtifactCode = 300,
+                    PublicId = "old-manifest-public-id",
+                    FilePath = "PCCAM.exe",
+                    FileSize = 10,
+                    Sha256 = new string('d', 64),
+                    StorageKey = "pccam/stable/1.0.0/old-public-id/files/old-manifest-public-id",
+                    DownloadPath = "pccam/stable/1.0.0/old-public-id/files/old-manifest-public-id",
+                    IsRequired = true,
+                    FileStatus = ArtifactFileStatus.Active
+                }
+            }
+        };
         var artifactQuery = new FakeArtifactManagementQueryRepository
         {
             LockedArtifact = CreateExistingArtifact()
         };
         var auditRepository = new FakeAuditLogRepository();
         var storage = new FakeArtifactStorageService();
+        var manifestService = new FakeArtifactFileManifestService();
         var actorAccessor = new UpdateManagementActorAccessor();
         actorAccessor.SetActor(new UpdateManagementActor
         {
@@ -56,6 +75,7 @@ public class ArtifactReplacementFailureTests
             releaseRepository,
             releaseQuery,
             artifactRepository,
+            artifactFileRepository,
             artifactQuery,
             auditRepository,
             actorAccessor,
@@ -67,6 +87,7 @@ public class ArtifactReplacementFailureTests
                 }
             },
             storage,
+            manifestService,
             Options.Create(new UpdateStorageOptions
             {
                 RootPath = "/test-only",
@@ -84,8 +105,10 @@ public class ArtifactReplacementFailureTests
         Assert.Equal(UpdateErrorCode.DuplicateArtifact, result.ErrorCode);
         Assert.True(dbContext.Connection.LastTransaction!.RolledBack);
         Assert.Empty(auditRepository.CreatedLogs);
+        Assert.Empty(artifactFileRepository.CreatedFiles);
         Assert.Single(storage.RemovedStorageKeys);
         Assert.Equal(storage.Destination.StorageKey, storage.RemovedStorageKeys[0]);
+        Assert.Single(manifestService.DeletedManifests);
         Assert.DoesNotContain(
             "pccam/stable/1.0.0/old-public-id/old.zip",
             storage.RemovedStorageKeys);
