@@ -14,6 +14,6 @@
 | B09 | 운영 기능 | Completed | Release 성공, 경고 0 | 293/293 성공 | Rate Limit, 제한 CORS, live·ready, Forwarded Headers, Request 로그, Dockerfile, tests | 사용자 로컬 검증 완료 |
 | B10 | 최종 검증 | Completed | Release 성공, 경고 0 | 294/294 성공 | ZIP 디렉터리 Entry 검증, deploy Secret ignore, B10 보고서 | Docker build 성공, 실행 사용자 app 확인 |
 | B11 | Manifest 파일별 복구 업데이트 | Completed | Release 성공, 경고 0 | 312/312 성공 | B11 문서, 완료 보고서, schema/migration, UpdateArtifactFile Entity/Repository/DI, ArtifactFileManifestService, ArtifactUploadService manifest 연결, UpdateCheck files[] 연결, Repository/Storage/Upload/UpdateCheck tests | 서버 구현 완료, 운영 DB migration 및 클라이언트 files[] 복구 구현 필요 |
-| B12 | 클라이언트 Manifest 파일 복구 업데이트 | InProgress | 문서 작업 - 미실행 | 문서 작업 - 해당 없음 | docs/client-manifest-repair-update-policy.md, codex/prompts/B12_IMPLEMENT_CLIENT_MANIFEST_REPAIR_UPDATE.md, WORK_STATUS | 정책/구현 프롬프트 작성 완료, 실제 클라이언트 저장소 구현 전 |
+| B12 | 클라이언트 Manifest 파일 복구 업데이트 | InProgress | 재검증 필요 | 재검증 필요 | docs/client-manifest-repair-update-policy.md, codex/prompts/B12_IMPLEMENT_CLIENT_MANIFEST_REPAIR_UPDATE.md, POSCAM.UpdateClient project skeleton, solution 등록, WORK_STATUS | UpdateClient 최소 골격 추가, plan/apply 명령 placeholder, 실제 복구 로직 전 |
 
 상태값: `Pending`, `InProgress`, `Completed`, `Blocked`
