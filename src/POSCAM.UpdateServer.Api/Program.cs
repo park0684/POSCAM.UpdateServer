@@ -215,6 +215,7 @@ builder.Services.AddScoped<IReleaseLifecycleService, ReleaseLifecycleService>();
 builder.Services.AddScoped<IAuditQueryService, AuditQueryService>();
 builder.Services.AddSingleton<IZipPackageValidator, ZipPackageValidator>();
 builder.Services.AddSingleton<IArtifactStorageService, ArtifactStorageService>();
+builder.Services.AddSingleton<IArtifactFileManifestService, ArtifactFileManifestService>();
 
 builder.Services.AddScoped<IUpdateManagementActorAccessor, UpdateManagementActorAccessor>();
 builder.Services
