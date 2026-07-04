@@ -41,6 +41,48 @@ public sealed partial class ArtifactUploadService
         };
     }
 
+    private static IReadOnlyList<UpdateArtifactFile> CreateArtifactFiles(
+        long artifactCode,
+        IReadOnlyList<ArtifactFileManifestEntry> manifestFiles)
+    {
+        return manifestFiles
+            .Select(file => new UpdateArtifactFile
+            {
+                ArtifactCode = artifactCode,
+                PublicId = file.PublicId,
+                FilePath = file.FilePath,
+                FileSize = file.FileSize,
+                Sha256 = file.Sha256,
+                StorageKey = file.StorageKey,
+                DownloadPath = file.DownloadPath,
+                IsRequired = file.IsRequired,
+                FileStatus = ArtifactFileStatus.Active
+            })
+            .ToArray();
+    }
+
+    private static IReadOnlyList<ArtifactFileManifestEntry> CreateManifestCleanupEntries(
+        IReadOnlyList<UpdateArtifactFile>? artifactFiles)
+    {
+        if (artifactFiles is null || artifactFiles.Count == 0)
+        {
+            return Array.Empty<ArtifactFileManifestEntry>();
+        }
+
+        return artifactFiles
+            .Select(file => new ArtifactFileManifestEntry
+            {
+                PublicId = file.PublicId,
+                FilePath = file.FilePath,
+                FileSize = file.FileSize,
+                Sha256 = file.Sha256,
+                StorageKey = file.StorageKey,
+                DownloadPath = file.DownloadPath,
+                IsRequired = file.IsRequired
+            })
+            .ToArray();
+    }
+
     private async Task CreateAuditAsync(
         string action,
         UpdateArtifact? before,
@@ -82,7 +124,8 @@ public sealed partial class ArtifactUploadService
 
     private static ArtifactUploadResponse MapResponse(
         UpdateArtifact artifact,
-        bool replaced)
+        bool replaced,
+        int manifestFileCount)
     {
         return new ArtifactUploadResponse
         {
@@ -95,6 +138,7 @@ public sealed partial class ArtifactUploadService
             FileName = artifact.FileName,
             FileSize = artifact.FileSize,
             Sha256 = artifact.Sha256,
+            ManifestFileCount = manifestFileCount,
             Replaced = replaced
         };
     }
