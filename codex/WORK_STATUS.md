@@ -13,3 +13,4 @@
 | B08 | 게시·감사 | Pending | - | - | - | - |
 | B09 | 운영 기능 | Pending | - | - | - | - |
 | B10 | 최종 검증 | Pending | - | - | - | - |
+| B11 | Manifest 파일별 복구 업데이트 | Pending | - | - | docs/manifest-repair-update-policy.md, codex/prompts/B11_IMPLEMENT_MANIFEST_REPAIR_UPDATE.md | B07/B08 이후 진행 |
