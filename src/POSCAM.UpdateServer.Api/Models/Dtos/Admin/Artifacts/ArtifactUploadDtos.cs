@@ -28,5 +28,6 @@ public sealed class ArtifactUploadResponse
     public string FileName { get; init; } = string.Empty;
     public long FileSize { get; init; }
     public string Sha256 { get; init; } = string.Empty;
+    public int ManifestFileCount { get; init; }
     public bool Replaced { get; init; }
 }
