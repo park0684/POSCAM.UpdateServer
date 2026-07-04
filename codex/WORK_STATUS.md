@@ -13,6 +13,6 @@
 | B08 | 게시·감사 | Completed | Release 성공, 경고 0 | 257/257 성공 | Publish·Disable·Quarantine·Audit API, Storage 재검증·격리, tests, B08 보고서 | 사용자 로컬 검증 완료 |
 | B09 | 운영 기능 | Completed | Release 성공, 경고 0 | 293/293 성공 | Rate Limit, 제한 CORS, live·ready, Forwarded Headers, Request 로그, Dockerfile, tests | 사용자 로컬 검증 완료 |
 | B10 | 최종 검증 | Completed | Release 성공, 경고 0 | 294/294 성공 | ZIP 디렉터리 Entry 검증, deploy Secret ignore, B10 보고서 | Docker build 성공, 실행 사용자 app 확인 |
-| B11 | Manifest 파일별 복구 업데이트 | InProgress | 미실행 | 미실행 | B11 문서, schema/migration, UpdateArtifactFile Entity/Repository/DI, Repository SQL tests | DB/Entity/Repository 단계 완료, Storage/Upload/UpdateCheck 연결 전 |
+| B11 | Manifest 파일별 복구 업데이트 | InProgress | 미실행 | 미실행 | B11 문서, schema/migration, UpdateArtifactFile Entity/Repository/DI, ArtifactFileManifestService, Repository/Storage tests | Manifest Storage 단계 완료, Upload/UpdateCheck 연결 전 |
 
 상태값: `Pending`, `InProgress`, `Completed`, `Blocked`
