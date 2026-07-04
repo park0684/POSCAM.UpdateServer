@@ -25,6 +25,7 @@ public class RepositorySqlContractTests
             UpdateArtifactRepository.CreateSql,
             UpdateArtifactRepository.ReplaceSql,
             UpdateArtifactRepository.SetStatusSql,
+            UpdateArtifactFileRepository.CreateSql,
             UpdateAuditLogRepository.CreateSql
         };
 
@@ -76,6 +77,7 @@ public class RepositorySqlContractTests
         Assert.Contains("prd_code AS ProductCode", UpdateProductRepository.GetByCodeSql, StringComparison.OrdinalIgnoreCase);
         Assert.Contains("rel_version_build AS VersionPatch", UpdateReleaseRepository.GetByCodeSql, StringComparison.OrdinalIgnoreCase);
         Assert.Contains("art_os AS OperatingSystem", UpdateArtifactRepository.GetByCodeSql, StringComparison.OrdinalIgnoreCase);
+        Assert.Contains("file_public_id AS PublicId", UpdateArtifactFileRepository.GetActiveByArtifactSql, StringComparison.OrdinalIgnoreCase);
         Assert.Contains("ual_code AS AuditLogCode", UpdateAuditLogRepository.GetByTargetSql, StringComparison.OrdinalIgnoreCase);
     }
 
@@ -88,6 +90,8 @@ public class RepositorySqlContractTests
         Assert.Contains("@RequestedArchitecture", UpdateReleaseRepository.FindLatestCompatibleSql);
         Assert.Contains("@PackageType", UpdateReleaseRepository.FindLatestCompatibleSql);
         Assert.Contains("@ReleaseCode", UpdateArtifactRepository.GetByTargetSql);
+        Assert.Contains("@ArtifactCode", UpdateArtifactFileRepository.GetActiveByArtifactSql);
+        Assert.Contains("@ArtifactCode", UpdateArtifactFileRepository.DeleteByArtifactSql);
         Assert.Contains("@TargetType", UpdateAuditLogRepository.GetByTargetSql);
         Assert.Contains("@TargetCode", UpdateAuditLogRepository.GetByTargetSql);
     }
@@ -111,6 +115,10 @@ public class RepositorySqlContractTests
         yield return UpdateArtifactRepository.CreateSql;
         yield return UpdateArtifactRepository.ReplaceSql;
         yield return UpdateArtifactRepository.SetStatusSql;
+        yield return UpdateArtifactFileRepository.GetActiveByArtifactSql;
+        yield return UpdateArtifactFileRepository.ExistsByArtifactSql;
+        yield return UpdateArtifactFileRepository.CreateSql;
+        yield return UpdateArtifactFileRepository.DeleteByArtifactSql;
         yield return UpdateAuditLogRepository.CreateSql;
         yield return UpdateAuditLogRepository.GetByTargetSql;
         yield return UpdateAuditLogRepository.CountByTargetSql;
