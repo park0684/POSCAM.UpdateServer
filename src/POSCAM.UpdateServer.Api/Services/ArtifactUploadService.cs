@@ -22,11 +22,13 @@ public sealed partial class ArtifactUploadService : IArtifactUploadService
     private readonly IUpdateReleaseRepository _releaseRepository;
     private readonly IReleaseManagementQueryRepository _releaseQueryRepository;
     private readonly IUpdateArtifactRepository _artifactRepository;
+    private readonly IUpdateArtifactFileRepository _artifactFileRepository;
     private readonly IArtifactManagementQueryRepository _artifactQueryRepository;
     private readonly IUpdateAuditLogRepository _auditLogRepository;
     private readonly IUpdateManagementActorAccessor _actorAccessor;
     private readonly IHttpContextAccessor _httpContextAccessor;
     private readonly IArtifactStorageService _storageService;
+    private readonly IArtifactFileManifestService _fileManifestService;
     private readonly UpdateStorageOptions _storageOptions;
     private readonly ILogger<ArtifactUploadService> _logger;
 
@@ -35,11 +37,13 @@ public sealed partial class ArtifactUploadService : IArtifactUploadService
         IUpdateReleaseRepository releaseRepository,
         IReleaseManagementQueryRepository releaseQueryRepository,
         IUpdateArtifactRepository artifactRepository,
+        IUpdateArtifactFileRepository artifactFileRepository,
         IArtifactManagementQueryRepository artifactQueryRepository,
         IUpdateAuditLogRepository auditLogRepository,
         IUpdateManagementActorAccessor actorAccessor,
         IHttpContextAccessor httpContextAccessor,
         IArtifactStorageService storageService,
+        IArtifactFileManifestService fileManifestService,
         IOptions<UpdateStorageOptions> storageOptions,
         ILogger<ArtifactUploadService> logger)
     {
@@ -47,11 +51,13 @@ public sealed partial class ArtifactUploadService : IArtifactUploadService
         _releaseRepository = releaseRepository;
         _releaseQueryRepository = releaseQueryRepository;
         _artifactRepository = artifactRepository;
+        _artifactFileRepository = artifactFileRepository;
         _artifactQueryRepository = artifactQueryRepository;
         _auditLogRepository = auditLogRepository;
         _actorAccessor = actorAccessor;
         _httpContextAccessor = httpContextAccessor;
         _storageService = storageService;
+        _fileManifestService = fileManifestService;
         _storageOptions = storageOptions.Value;
         _logger = logger;
     }
@@ -97,6 +103,8 @@ public sealed partial class ArtifactUploadService : IArtifactUploadService
 
         ArtifactStorageDestination? destination = null;
         StagedArtifactFile? stagedFile = null;
+        IReadOnlyList<ArtifactFileManifestEntry>? manifestFiles = null;
+        IReadOnlyList<UpdateArtifactFile>? existingManifestFiles = null;
         var finalFileMoved = false;
         var databaseCommitted = false;
 
@@ -117,6 +125,18 @@ public sealed partial class ArtifactUploadService : IArtifactUploadService
             await _storageService.ValidatePackageAsync(
                 stagedFile,
                 cancellationToken);
+
+            manifestFiles = await _fileManifestService.CreateManifestFilesAsync(
+                stagedFile.PhysicalPath,
+                destination,
+                cancellationToken);
+
+            if (manifestFiles.Count == 0)
+            {
+                throw new ArtifactStorageException(
+                    ArtifactStorageFailureType.InvalidPackage,
+                    "ZIP에 Manifest 복구 대상 파일이 없습니다.");
+            }
 
             // File.Move는 원자적인 짧은 작업이므로 클라이언트 취소와 분리한다.
             // 이동 후 취소 예외가 발생해 최종 파일을 놓치는 상태를 방지한다.
@@ -175,6 +195,14 @@ public sealed partial class ArtifactUploadService : IArtifactUploadService
                     transaction,
                     cancellationToken);
 
+                if (existing is not null)
+                {
+                    existingManifestFiles = await _artifactFileRepository.GetActiveByArtifactAsync(
+                        existing.ArtifactCode,
+                        transaction,
+                        cancellationToken);
+                }
+
                 var artifact = CreateArtifact(
                     releaseCode,
                     upload,
@@ -216,6 +244,16 @@ public sealed partial class ArtifactUploadService : IArtifactUploadService
                     ?? throw new System.InvalidOperationException(
                         "Saved Artifact could not be reloaded.");
 
+                await _artifactFileRepository.DeleteByArtifactAsync(
+                    savedArtifact.ArtifactCode,
+                    transaction,
+                    cancellationToken);
+
+                await _artifactFileRepository.CreateManyAsync(
+                    CreateArtifactFiles(savedArtifact.ArtifactCode, manifestFiles),
+                    transaction,
+                    cancellationToken);
+
                 await CreateAuditAsync(
                     replaced
                         ? AuditActions.ReplaceDraftArtifact
@@ -229,6 +267,13 @@ public sealed partial class ArtifactUploadService : IArtifactUploadService
                 // DB 변경이 준비된 뒤에는 클라이언트 연결 취소와 무관하게 Commit을 확정한다.
                 await transaction.CommitAsync(CancellationToken.None);
                 databaseCommitted = true;
+
+                if (existingManifestFiles is not null && existingManifestFiles.Count > 0)
+                {
+                    await _fileManifestService.DeleteManifestFilesAsync(
+                        CreateManifestCleanupEntries(existingManifestFiles),
+                        CancellationToken.None);
+                }
 
                 if (existing is not null
                     && !string.Equals(
@@ -250,7 +295,7 @@ public sealed partial class ArtifactUploadService : IArtifactUploadService
                 }
 
                 return AdminServiceResult<ArtifactUploadResponse>.Ok(
-                    MapResponse(savedArtifact, replaced),
+                    MapResponse(savedArtifact, replaced, manifestFiles.Count),
                     replaced
                         ? "Draft Artifact를 교체했습니다."
                         : "Draft Artifact를 업로드했습니다.",
@@ -300,6 +345,13 @@ public sealed partial class ArtifactUploadService : IArtifactUploadService
             await _storageService.DeleteStagingAsync(
                 stagedFile,
                 CancellationToken.None);
+
+            if (!databaseCommitted && manifestFiles is not null)
+            {
+                await _fileManifestService.DeleteManifestFilesAsync(
+                    manifestFiles,
+                    CancellationToken.None);
+            }
 
             if (finalFileMoved
                 && !databaseCommitted
