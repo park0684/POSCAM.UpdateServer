@@ -123,6 +123,7 @@ public class UpdateCheckServiceTests
         Assert.Null(result.Data.LatestVersion);
         Assert.Null(result.Data.PackageUrl);
         Assert.Null(result.Data.FileSize);
+        Assert.Empty(result.Data.Files);
     }
 
     [Fact]
@@ -143,6 +144,7 @@ public class UpdateCheckServiceTests
         Assert.False(result.Data.UpdateAvailable);
         Assert.Equal("NO_COMPATIBLE_ARTIFACT", result.Data.ReasonCode);
         Assert.Null(result.Data.PackageUrl);
+        Assert.Empty(result.Data.Files);
     }
 
     [Fact]
@@ -152,8 +154,14 @@ public class UpdateCheckServiceTests
         {
             CompatibleRelease = CreateCompatibleRelease()
         };
+        var artifactFileRepository = new FakeArtifactFileRepository
+        {
+            Files = CreateArtifactFiles()
+        };
 
-        var service = CreateService(releaseRepository: releaseRepository);
+        var service = CreateService(
+            releaseRepository: releaseRepository,
+            artifactFileRepository: artifactFileRepository);
 
         var result = await service.CheckAsync(
             CreateValidRequest(currentVersion: "1.9.0"));
@@ -172,6 +180,67 @@ public class UpdateCheckServiceTests
             "https://update.poscam.co.kr/packages/pccam/stable/2.0.0/publicid/PCCAM_2.0.0_x86.zip",
             result.Data.PackageUrl);
         Assert.Equal(DateTimeKind.Utc, result.Data.PublishedAt?.Kind);
+
+        var file = Assert.Single(result.Data.Files);
+        Assert.Equal("PCCAM.exe", file.Path);
+        Assert.Equal(10, file.Size);
+        Assert.Equal(new string('c', 64), file.Sha256);
+        Assert.True(file.Required);
+        Assert.Equal(
+            "https://update.poscam.co.kr/packages/pccam/stable/2.0.0/publicid/files/file-public-id",
+            file.DownloadUrl);
+    }
+
+    [Fact]
+    public async Task CheckAsync_동일버전이어도_files를_반환한다()
+    {
+        var releaseRepository = new FakeUpdateReleaseRepository
+        {
+            CompatibleRelease = CreateCompatibleRelease()
+        };
+        var artifactFileRepository = new FakeArtifactFileRepository
+        {
+            Files = CreateArtifactFiles()
+        };
+
+        var service = CreateService(
+            releaseRepository: releaseRepository,
+            artifactFileRepository: artifactFileRepository);
+
+        var result = await service.CheckAsync(
+            CreateValidRequest(currentVersion: "2.0.0.0"));
+
+        Assert.True(result.Success);
+        Assert.NotNull(result.Data);
+        Assert.False(result.Data.UpdateAvailable);
+        Assert.Equal("ALREADY_LATEST", result.Data.ReasonCode);
+        Assert.Single(result.Data.Files);
+    }
+
+    [Fact]
+    public async Task CheckAsync_ManifestStorageKey가_위험하면_DatabaseError다()
+    {
+        var releaseRepository = new FakeUpdateReleaseRepository
+        {
+            CompatibleRelease = CreateCompatibleRelease()
+        };
+        var artifactFileRepository = new FakeArtifactFileRepository
+        {
+            Files = new[]
+            {
+                CreateArtifactFile(storageKey: "../outside/file.exe")
+            }
+        };
+
+        var service = CreateService(
+            releaseRepository: releaseRepository,
+            artifactFileRepository: artifactFileRepository);
+
+        var result = await service.CheckAsync(CreateValidRequest());
+
+        Assert.False(result.Success);
+        Assert.Equal(UpdateErrorCode.DatabaseError, result.ErrorCode);
+        Assert.Null(result.Data);
     }
 
     [Fact]
@@ -349,7 +418,8 @@ public class UpdateCheckServiceTests
 
     private static UpdateCheckService CreateService(
         FakeUpdateProductRepository? productRepository = null,
-        FakeUpdateReleaseRepository? releaseRepository = null)
+        FakeUpdateReleaseRepository? releaseRepository = null,
+        FakeArtifactFileRepository? artifactFileRepository = null)
     {
         productRepository ??= new FakeUpdateProductRepository
         {
@@ -361,6 +431,8 @@ public class UpdateCheckServiceTests
             CompatibleRelease = null,
             HasPublishedRelease = false
         };
+
+        artifactFileRepository ??= new FakeArtifactFileRepository();
 
         var options = Options.Create(
             new UpdateStorageOptions
@@ -375,6 +447,7 @@ public class UpdateCheckServiceTests
         return new UpdateCheckService(
             productRepository,
             releaseRepository,
+            artifactFileRepository,
             options);
     }
 
@@ -436,6 +509,33 @@ public class UpdateCheckServiceTests
             ContentType = "application/zip",
             FileSize = 123456,
             Sha256 = new string('a', 64)
+        };
+    }
+
+    private static IReadOnlyList<UpdateArtifactFile> CreateArtifactFiles()
+    {
+        return new[]
+        {
+            CreateArtifactFile()
+        };
+    }
+
+    private static UpdateArtifactFile CreateArtifactFile(
+        string storageKey = "pccam/stable/2.0.0/publicid/files/file-public-id")
+    {
+        return new UpdateArtifactFile
+        {
+            FileCode = 1,
+            ArtifactCode = 20,
+            PublicId = "file-public-id",
+            FilePath = "PCCAM.exe",
+            FileSize = 10,
+            Sha256 = new string('c', 64),
+            StorageKey = storageKey,
+            DownloadPath = storageKey,
+            IsRequired = true,
+            FileStatus = ArtifactFileStatus.Active,
+            CreatedAt = DateTime.UtcNow
         };
     }
 }
