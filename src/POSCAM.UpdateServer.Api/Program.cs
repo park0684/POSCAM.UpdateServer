@@ -204,6 +204,7 @@ builder.Services.AddScoped<IUpdateProductRepository, UpdateProductRepository>();
 builder.Services.AddScoped<IUpdateReleaseRepository, UpdateReleaseRepository>();
 builder.Services.AddScoped<IReleaseManagementQueryRepository, ReleaseManagementQueryRepository>();
 builder.Services.AddScoped<IUpdateArtifactRepository, UpdateArtifactRepository>();
+builder.Services.AddScoped<IUpdateArtifactFileRepository, UpdateArtifactFileRepository>();
 builder.Services.AddScoped<IArtifactManagementQueryRepository, ArtifactManagementQueryRepository>();
 builder.Services.AddScoped<IUpdateAuditLogRepository, UpdateAuditLogRepository>();
 builder.Services.AddScoped<IAuditManagementQueryRepository, AuditManagementQueryRepository>();
