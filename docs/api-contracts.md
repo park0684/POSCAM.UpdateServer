@@ -38,6 +38,8 @@ Content-Type: application/json
 - releaseNotes
 - publishedAt
 
+B11 이후 Update Check 응답에는 동일 버전 파일 복구 판단을 위한 `files[]` Manifest가 추가될 예정이다.
+
 ## 관리자 경로
 
 ```text
@@ -56,6 +58,21 @@ GET    /api/v1/admin/releases/{releaseCode}/audit-logs
 ```
 
 Artifact multipart 필드: `os`, `architecture`, `packageType`, `file`.
+
+Artifact 업로드 응답 Data:
+- artifactCode
+- releaseCode
+- publicId
+- os
+- architecture
+- packageType
+- fileName
+- fileSize
+- sha256
+- manifestFileCount
+- replaced
+
+`manifestFileCount`는 ZIP 업로드 시 생성·저장된 파일별 복구 Manifest 대상 파일 수이다.
 
 ### 상태 작업
 
