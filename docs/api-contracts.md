@@ -37,8 +37,16 @@ Content-Type: application/json
 - sha256
 - releaseNotes
 - publishedAt
+- files
 
-B11 이후 Update Check 응답에는 동일 버전 파일 복구 판단을 위한 `files[]` Manifest가 추가될 예정이다.
+`files[]`는 동일 버전 파일 복구 판단을 위한 Manifest이다. 서버는 클라이언트 로컬 파일 상태를 직접 알 수 없으므로 `updateAvailable=false`, `reasonCode=ALREADY_LATEST`인 경우에도 compatible Artifact가 있으면 `files[]`를 내려줄 수 있다. 클라이언트는 `files[].path`, `files[].size`, `files[].sha256`을 기준으로 로컬 파일을 검사하고, 누락 또는 SHA-256 불일치 파일만 `files[].downloadUrl`로 복구한다.
+
+`files[]` 항목:
+- path
+- size
+- sha256
+- required
+- downloadUrl
 
 ## 관리자 경로
 
