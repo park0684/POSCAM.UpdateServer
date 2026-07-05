@@ -1,3 +1,15 @@
-using POSCAM.UpdateClient;
+using System.Threading;
 
-return await UpdateClientApplication.RunAsync(args, CancellationToken.None);
+namespace POSCAM.UpdateClient
+{
+    internal static class Program
+    {
+        private static int Main(string[] args)
+        {
+            return UpdateClientApplication
+                .RunAsync(args, CancellationToken.None)
+                .GetAwaiter()
+                .GetResult();
+        }
+    }
+}
