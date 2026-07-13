@@ -6,6 +6,8 @@ Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "POSCAM.UpdateServer.Api", "
 EndProject
 Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "POSCAM.UpdateClient", "src\POSCAM.UpdateClient\POSCAM.UpdateClient.csproj", "{9DDB8C70-2A39-4D1D-9B94-E728D3C3F001}"
 EndProject
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "POSCAM.UpdateClient.Tests", "tests\POSCAM.UpdateClient.Tests\POSCAM.UpdateClient.Tests.csproj", "{A8E5A83C-5B7F-4D31-9B8D-4B29A2C3E801}"
+EndProject
 Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "POSCAM.UpdateServer.Tests", "tests\POSCAM.UpdateServer.Tests\POSCAM.UpdateServer.Tests.csproj", "{BC329724-8F53-4A47-9F43-1B74616B51B0}"
 EndProject
 Global
@@ -22,6 +24,10 @@ Global
 		{9DDB8C70-2A39-4D1D-9B94-E728D3C3F001}.Debug|Any CPU.Build.0 = Debug|Any CPU
 		{9DDB8C70-2A39-4D1D-9B94-E728D3C3F001}.Release|Any CPU.ActiveCfg = Release|Any CPU
 		{9DDB8C70-2A39-4D1D-9B94-E728D3C3F001}.Release|Any CPU.Build.0 = Release|Any CPU
+		{A8E5A83C-5B7F-4D31-9B8D-4B29A2C3E801}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{A8E5A83C-5B7F-4D31-9B8D-4B29A2C3E801}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{A8E5A83C-5B7F-4D31-9B8D-4B29A2C3E801}.Release|Any CPU.ActiveCfg = Release|Any CPU
+		{A8E5A83C-5B7F-4D31-9B8D-4B29A2C3E801}.Release|Any CPU.Build.0 = Release|Any CPU
 		{BC329724-8F53-4A47-9F43-1B74616B51B0}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
 		{BC329724-8F53-4A47-9F43-1B74616B51B0}.Debug|Any CPU.Build.0 = Debug|Any CPU
 		{BC329724-8F53-4A47-9F43-1B74616B51B0}.Release|Any CPU.ActiveCfg = Release|Any CPU
