@@ -84,8 +84,15 @@ namespace POSCAM.UpdateClient.Tests.Services
                 _workDirectory,
                 "downloads",
                 "provider.dll");
+            var destinationDirectory = Path.GetDirectoryName(destinationPath);
 
-            Directory.CreateDirectory(Path.GetDirectoryName(destinationPath));
+            if (destinationDirectory == null)
+            {
+                throw new InvalidOperationException(
+                    "테스트 다운로드 디렉터리를 계산할 수 없습니다.");
+            }
+
+            Directory.CreateDirectory(destinationDirectory);
             File.WriteAllBytes(destinationPath, originalContent);
 
             using (var service = CreateService(
