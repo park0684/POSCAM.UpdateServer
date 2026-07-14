@@ -1,4 +1,5 @@
 using System;
+using System.Diagnostics;
 using System.Threading;
 using System.Threading.Tasks;
 using POSCAM.UpdateClient.Models;
@@ -28,6 +29,9 @@ namespace POSCAM.UpdateClient
 
                 case "apply":
                     return RunApplyAsync(args, cancellationToken);
+
+                case "apply-worker":
+                    return RunApplyWorkerAsync(args, cancellationToken);
 
                 default:
                     return Task.FromResult(
@@ -95,11 +99,45 @@ namespace POSCAM.UpdateClient
             }
 
             var pathService = new UpdateWorkPathService();
+            var hashCalculator = new FileHashCalculator();
             var service = new UpdateApplyService(
                 new UpdateApplyPlanStore(),
                 pathService,
                 new ProcessWaitService(),
                 new FileRepairApplyService(
+                    pathService,
+                    hashCalculator),
+                new FullPackageStagingService(
+                    pathService,
+                    hashCalculator),
+                new UpdateWorkerLauncherService(pathService),
+                new ApplicationRestartService(),
+                GetCurrentProcessId);
+
+            return await service.ApplyAsync(
+                options,
+                cancellationToken)
+                .ConfigureAwait(false);
+        }
+
+        private static async Task<int> RunApplyWorkerAsync(
+            string[] args,
+            CancellationToken cancellationToken)
+        {
+            ApplyOptions? options;
+
+            if (!ApplyOptions.TryParse(args, out options)
+                || options == null)
+            {
+                return UpdateClientExitCodes.ApplyFailed;
+            }
+
+            var pathService = new UpdateWorkPathService();
+            var service = new UpdateApplyWorkerService(
+                new UpdateApplyPlanStore(),
+                pathService,
+                new ProcessWaitService(),
+                new FullPackageApplyService(
                     pathService,
                     new FileHashCalculator()),
                 new ApplicationRestartService());
@@ -108,6 +146,14 @@ namespace POSCAM.UpdateClient
                 options,
                 cancellationToken)
                 .ConfigureAwait(false);
+        }
+
+        private static int GetCurrentProcessId()
+        {
+            using (var process = Process.GetCurrentProcess())
+            {
+                return process.Id;
+            }
         }
 
         private static bool IsHelp(string value)
