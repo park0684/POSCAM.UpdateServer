@@ -50,11 +50,26 @@ namespace POSCAM.UpdateClient.Services
                     || exception is IOException
                     || exception is UnauthorizedAccessException)
             {
+                UpdateClientLog.Error(
+                    options.InstallDirectory,
+                    "StartupCheck.VersionResolveFailed",
+                    "로컬 프로그램 버전을 확인하지 못했습니다. ExitCode=20",
+                    exception);
+
                 return new StartupCheckResult
                 {
                     ExitCode = UpdateClientExitCodes.VerificationFailed
                 };
             }
+
+            UpdateClientLog.Info(
+                options.InstallDirectory,
+                "StartupCheck.Request",
+                "Product=" + options.ProductCode
+                    + " CurrentVersion=" + currentVersion
+                    + " OS=" + options.OperatingSystem
+                    + " Architecture=" + options.Architecture
+                    + " Channel=" + options.Channel);
 
             UpdateCheckResponse response;
 
@@ -82,14 +97,36 @@ namespace POSCAM.UpdateClient.Services
                     || exception is HttpRequestException
                     || exception is TaskCanceledException)
             {
+                UpdateClientLog.Error(
+                    options.InstallDirectory,
+                    "StartupCheck.RequestFailed",
+                    "Update Check 요청에 실패했습니다. ExitCode=30",
+                    exception);
+
                 return new StartupCheckResult
                 {
                     ExitCode = UpdateClientExitCodes.UpdateCheckFailed
                 };
             }
 
+            var manifestCount = response.Files == null
+                ? 0
+                : response.Files.Count;
+
+            UpdateClientLog.Info(
+                options.InstallDirectory,
+                "StartupCheck.Response",
+                "UpdateAvailable=" + response.UpdateAvailable
+                    + " LatestVersion=" + (response.LatestVersion ?? "")
+                    + " ManifestFiles=" + manifestCount);
+
             if (response.UpdateAvailable)
             {
+                UpdateClientLog.Info(
+                    options.InstallDirectory,
+                    "StartupCheck.Decision",
+                    "Mode=FullPackage ExitCode=10");
+
                 return new StartupCheckResult
                 {
                     ExitCode = UpdateClientExitCodes.ApplyRequired,
@@ -112,6 +149,12 @@ namespace POSCAM.UpdateClient.Services
                     || exception is IOException
                     || exception is UnauthorizedAccessException)
             {
+                UpdateClientLog.Error(
+                    options.InstallDirectory,
+                    "StartupCheck.ManifestFailed",
+                    "Manifest 로컬 검증에 실패했습니다. ExitCode=20",
+                    exception);
+
                 return new StartupCheckResult
                 {
                     ExitCode = UpdateClientExitCodes.VerificationFailed,
@@ -119,11 +162,29 @@ namespace POSCAM.UpdateClient.Services
                 };
             }
 
+            foreach (var target in repairPlan.Targets)
+            {
+                UpdateClientLog.Info(
+                    options.InstallDirectory,
+                    "StartupCheck.RepairTarget",
+                    "Path=" + target.RelativePath
+                        + " Reason=" + target.Reason);
+            }
+
+            var exitCode = repairPlan.HasRepairTargets
+                ? UpdateClientExitCodes.ApplyRequired
+                : UpdateClientExitCodes.Success;
+
+            UpdateClientLog.Info(
+                options.InstallDirectory,
+                "StartupCheck.Decision",
+                "Mode=FileRepair ManifestFiles=" + manifestCount
+                    + " RepairTargets=" + repairPlan.Targets.Count
+                    + " ExitCode=" + exitCode);
+
             return new StartupCheckResult
             {
-                ExitCode = repairPlan.HasRepairTargets
-                    ? UpdateClientExitCodes.ApplyRequired
-                    : UpdateClientExitCodes.Success,
+                ExitCode = exitCode,
                 FullPackageUpdateRequired = false,
                 UpdateResponse = response,
                 RepairPlan = repairPlan
