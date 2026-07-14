@@ -7,7 +7,8 @@ using POSCAM.UpdateClient.Models;
 namespace POSCAM.UpdateClient.Services
 {
     /// <summary>
-    /// 적용 계획을 검증하고 대상 프로세스 종료 후 파일 복구를 수행한다.
+    /// 적용 계획을 검증하고 대상 프로세스 종료 후 파일 복구 또는 Full Package
+    /// worker 실행을 수행한다.
     /// </summary>
     internal sealed class UpdateApplyService
     {
@@ -15,14 +16,20 @@ namespace POSCAM.UpdateClient.Services
         private readonly UpdateWorkPathService _pathService;
         private readonly IProcessWaitService _processWaitService;
         private readonly FileRepairApplyService _fileRepairApplyService;
+        private readonly FullPackageStagingService _fullPackageStagingService;
+        private readonly IUpdateWorkerLauncherService _workerLauncherService;
         private readonly IApplicationRestartService _restartService;
+        private readonly Func<int> _currentProcessIdProvider;
 
         public UpdateApplyService(
             UpdateApplyPlanStore planStore,
             UpdateWorkPathService pathService,
             IProcessWaitService processWaitService,
             FileRepairApplyService fileRepairApplyService,
-            IApplicationRestartService restartService)
+            FullPackageStagingService fullPackageStagingService,
+            IUpdateWorkerLauncherService workerLauncherService,
+            IApplicationRestartService restartService,
+            Func<int> currentProcessIdProvider)
         {
             _planStore = planStore
                 ?? throw new ArgumentNullException(nameof(planStore));
@@ -32,8 +39,15 @@ namespace POSCAM.UpdateClient.Services
                 ?? throw new ArgumentNullException(nameof(processWaitService));
             _fileRepairApplyService = fileRepairApplyService
                 ?? throw new ArgumentNullException(nameof(fileRepairApplyService));
+            _fullPackageStagingService = fullPackageStagingService
+                ?? throw new ArgumentNullException(nameof(fullPackageStagingService));
+            _workerLauncherService = workerLauncherService
+                ?? throw new ArgumentNullException(nameof(workerLauncherService));
             _restartService = restartService
                 ?? throw new ArgumentNullException(nameof(restartService));
+            _currentProcessIdProvider = currentProcessIdProvider
+                ?? throw new ArgumentNullException(
+                    nameof(currentProcessIdProvider));
         }
 
         public async Task<int> ApplyAsync(
@@ -62,23 +76,46 @@ namespace POSCAM.UpdateClient.Services
                     return UpdateClientExitCodes.ApplyFailed;
                 }
 
-                if (!string.Equals(
+                if (string.Equals(
                     plan.Mode,
                     UpdateApplyModes.FileRepair,
                     StringComparison.Ordinal))
                 {
-                    return UpdateClientExitCodes.ApplyFailed;
+                    _fileRepairApplyService.ApplyAndRestart(
+                        plan,
+                        () => _restartService.Restart(
+                            plan.InstallDirectory,
+                            plan.ApplicationFileName),
+                        cancellationToken);
+
+                    _planStore.Delete(planPath);
+                    return UpdateClientExitCodes.Success;
                 }
 
-                _fileRepairApplyService.ApplyAndRestart(
-                    plan,
-                    () => _restartService.Restart(
-                        plan.InstallDirectory,
-                        plan.ApplicationFileName),
-                    cancellationToken);
+                if (string.Equals(
+                    plan.Mode,
+                    UpdateApplyModes.FullPackage,
+                    StringComparison.Ordinal))
+                {
+                    var stagingResult = _fullPackageStagingService.Stage(
+                        plan,
+                        cancellationToken);
 
-                _planStore.Delete(planPath);
-                return UpdateClientExitCodes.Success;
+                    plan.Targets = stagingResult.Targets;
+                    _planStore.Save(planPath, plan);
+
+                    _workerLauncherService.Launch(
+                        plan.InstallDirectory,
+                        plan.JobId,
+                        planPath,
+                        options.RestartFileName,
+                        options.WaitTimeoutSeconds,
+                        _currentProcessIdProvider());
+
+                    return UpdateClientExitCodes.Success;
+                }
+
+                return UpdateClientExitCodes.ApplyFailed;
             }
             catch (OperationCanceledException)
                 when (cancellationToken.IsCancellationRequested)
@@ -90,7 +127,8 @@ namespace POSCAM.UpdateClient.Services
                     || exception is InvalidDataException
                     || exception is IOException
                     || exception is UnauthorizedAccessException
-                    || exception is NotSupportedException)
+                    || exception is NotSupportedException
+                    || exception is System.ComponentModel.Win32Exception)
             {
                 return UpdateClientExitCodes.ApplyFailed;
             }
