@@ -18,9 +18,11 @@ namespace POSCAM.UpdateClient.Services
                 throw new ArgumentNullException(nameof(options));
             }
 
-            if (!string.IsNullOrWhiteSpace(options.CurrentVersionOverride))
+            var currentVersionOverride = options.CurrentVersionOverride;
+
+            if (!string.IsNullOrWhiteSpace(currentVersionOverride))
             {
-                return options.CurrentVersionOverride.Trim();
+                return currentVersionOverride.Trim();
             }
 
             if (string.IsNullOrWhiteSpace(options.InstallDirectory))
