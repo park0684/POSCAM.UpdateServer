@@ -27,7 +27,7 @@ namespace POSCAM.UpdateClient
                     return RunStartupCheckAsync(args, cancellationToken);
 
                 case "apply":
-                    return RunPlaceholderAsync(cancellationToken);
+                    return RunApplyAsync(args, cancellationToken);
 
                 default:
                     return Task.FromResult(
@@ -82,11 +82,32 @@ namespace POSCAM.UpdateClient
             }
         }
 
-        private static Task<int> RunPlaceholderAsync(
+        private static async Task<int> RunApplyAsync(
+            string[] args,
             CancellationToken cancellationToken)
         {
-            cancellationToken.ThrowIfCancellationRequested();
-            return Task.FromResult(UpdateClientExitCodes.NotImplemented);
+            ApplyOptions? options;
+
+            if (!ApplyOptions.TryParse(args, out options)
+                || options == null)
+            {
+                return UpdateClientExitCodes.ApplyFailed;
+            }
+
+            var pathService = new UpdateWorkPathService();
+            var service = new UpdateApplyService(
+                new UpdateApplyPlanStore(),
+                pathService,
+                new ProcessWaitService(),
+                new FileRepairApplyService(
+                    pathService,
+                    new FileHashCalculator()),
+                new ApplicationRestartService());
+
+            return await service.ApplyAsync(
+                options,
+                cancellationToken)
+                .ConfigureAwait(false);
         }
 
         private static bool IsHelp(string value)
