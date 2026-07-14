@@ -144,32 +144,42 @@ namespace POSCAM.UpdateClient.Services
         {
             var response = checkResult.UpdateResponse;
 
-            if (response == null
-                || string.IsNullOrWhiteSpace(response.PackageUrl)
-                || string.IsNullOrWhiteSpace(response.FileName)
-                || !response.FileSize.HasValue
-                || response.FileSize.Value < 0
-                || string.IsNullOrWhiteSpace(response.Sha256))
+            if (response == null)
+            {
+                throw new InvalidDataException(
+                    "Full Package 업데이트 응답이 없습니다.");
+            }
+
+            var packageUrl = response.PackageUrl;
+            var fileName = response.FileName;
+            var sha256 = response.Sha256;
+            var fileSize = response.FileSize;
+
+            if (string.IsNullOrWhiteSpace(packageUrl)
+                || string.IsNullOrWhiteSpace(fileName)
+                || !fileSize.HasValue
+                || fileSize.Value < 0
+                || string.IsNullOrWhiteSpace(sha256))
             {
                 throw new InvalidDataException(
                     "Full Package 업데이트 정보가 올바르지 않습니다.");
             }
 
             var packageFileName = _workPathService
-                .ValidateFileName(response.FileName);
+                .ValidateFileName(fileName);
             var relativeDownloadPath = "package/" + packageFileName;
             var destinationPath = _workPathService.ResolveJobFilePath(
                 paths.JobDirectory,
                 relativeDownloadPath);
-            var expectedSha256 = response.Sha256.Trim().ToUpperInvariant();
+            var expectedSha256 = sha256.Trim().ToUpperInvariant();
 
             var downloadedPath = await _downloadService
                 .DownloadAndVerifyAsync(
                     new UpdateFileDownloadRequest
                     {
-                        DownloadUrl = response.PackageUrl,
+                        DownloadUrl = packageUrl,
                         DestinationPath = destinationPath,
-                        ExpectedSize = response.FileSize.Value,
+                        ExpectedSize = fileSize.Value,
                         ExpectedSha256 = expectedSha256
                     },
                     cancellationToken)
@@ -179,7 +189,7 @@ namespace POSCAM.UpdateClient.Services
             plan.PackageType = response.PackageType;
             plan.PackageFileName = packageFileName;
             plan.PackagePath = downloadedPath;
-            plan.PackageSize = response.FileSize.Value;
+            plan.PackageSize = fileSize.Value;
             plan.PackageSha256 = expectedSha256;
         }
 
@@ -201,10 +211,12 @@ namespace POSCAM.UpdateClient.Services
 
             foreach (var target in repairTargets)
             {
-                if (target == null)
+                if (target == null
+                    || string.IsNullOrWhiteSpace(target.RelativePath)
+                    || string.IsNullOrWhiteSpace(target.ExpectedSha256))
                 {
                     throw new InvalidDataException(
-                        "파일 복구 대상이 null입니다.");
+                        "파일 복구 대상 정보가 올바르지 않습니다.");
                 }
 
                 var relativeDownloadPath = "files/"
