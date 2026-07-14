@@ -20,9 +20,14 @@ namespace POSCAM.UpdateClient.Services
 
             var currentVersionOverride = options.CurrentVersionOverride;
 
-            if (!string.IsNullOrWhiteSpace(currentVersionOverride))
+            if (currentVersionOverride != null)
             {
-                return currentVersionOverride.Trim();
+                var normalizedOverride = currentVersionOverride.Trim();
+
+                if (normalizedOverride.Length > 0)
+                {
+                    return normalizedOverride;
+                }
             }
 
             if (string.IsNullOrWhiteSpace(options.InstallDirectory))
@@ -65,9 +70,14 @@ namespace POSCAM.UpdateClient.Services
                 .GetVersionInfo(applicationPath)
                 .FileVersion;
 
-            if (!string.IsNullOrWhiteSpace(fileVersion))
+            if (fileVersion != null)
             {
-                return fileVersion.Trim();
+                var normalizedFileVersion = fileVersion.Trim();
+
+                if (normalizedFileVersion.Length > 0)
+                {
+                    return normalizedFileVersion;
+                }
             }
 
             try
