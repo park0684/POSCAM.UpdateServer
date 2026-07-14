@@ -60,8 +60,9 @@ namespace POSCAM.UpdateClient.Tests.Services
                 90,
                 2468);
 
-            Assert.NotNull(captured);
-
+            var startInfo = captured
+                ?? throw new InvalidOperationException(
+                    "worker 시작 정보가 전달되지 않았습니다.");
             var workerDirectory = _pathService.GetWorkerDirectory(
                 _installDirectory,
                 JobId);
@@ -69,15 +70,15 @@ namespace POSCAM.UpdateClient.Tests.Services
                 workerDirectory,
                 "POSCAM.UpdateClient.exe");
 
-            Assert.Equal(workerExecutablePath, captured!.FileName);
-            Assert.Equal(workerDirectory, captured.WorkingDirectory);
-            Assert.False(captured.UseShellExecute);
-            Assert.True(captured.CreateNoWindow);
-            Assert.Contains("apply-worker", captured.Arguments);
-            Assert.Contains("--wait-process-id 2468", captured.Arguments);
-            Assert.Contains("--wait-timeout-seconds 90", captured.Arguments);
-            Assert.Contains("\"" + planPath + "\"", captured.Arguments);
-            Assert.Contains("--restart \"PcCam.exe\"", captured.Arguments);
+            Assert.Equal(workerExecutablePath, startInfo.FileName);
+            Assert.Equal(workerDirectory, startInfo.WorkingDirectory);
+            Assert.False(startInfo.UseShellExecute);
+            Assert.True(startInfo.CreateNoWindow);
+            Assert.Contains("apply-worker", startInfo.Arguments);
+            Assert.Contains("--wait-process-id 2468", startInfo.Arguments);
+            Assert.Contains("--wait-timeout-seconds 90", startInfo.Arguments);
+            Assert.Contains("\"" + planPath + "\"", startInfo.Arguments);
+            Assert.Contains("--restart \"PcCam.exe\"", startInfo.Arguments);
             Assert.Equal(
                 "worker exe",
                 File.ReadAllText(workerExecutablePath));
