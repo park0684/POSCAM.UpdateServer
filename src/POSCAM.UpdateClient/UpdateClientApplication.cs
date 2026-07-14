@@ -51,18 +51,29 @@ namespace POSCAM.UpdateClient
             {
                 using (var updateServerClient = new UpdateServerClient(
                     options.BaseUrl))
+                using (var downloadService = new UpdateFileDownloadService())
                 {
-                    var service = new StartupCheckService(
+                    var checkService = new StartupCheckService(
                         updateServerClient,
                         new ApplicationVersionResolver(),
                         new ManifestRepairPlanner());
 
-                    var result = await service.CheckAsync(
+                    var checkResult = await checkService.CheckAsync(
                         options,
                         cancellationToken)
                         .ConfigureAwait(false);
 
-                    return result.ExitCode;
+                    var preparationService =
+                        new StartupUpdatePreparationService(
+                            downloadService,
+                            new UpdateWorkPathService(),
+                            new UpdateApplyPlanStore());
+
+                    return await preparationService.PrepareAsync(
+                        options,
+                        checkResult,
+                        cancellationToken)
+                        .ConfigureAwait(false);
                 }
             }
             catch (ArgumentException)
