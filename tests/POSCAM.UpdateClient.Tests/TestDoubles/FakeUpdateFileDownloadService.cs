@@ -24,9 +24,11 @@ namespace POSCAM.UpdateClient.Tests.TestDoubles
         {
             cancellationToken.ThrowIfCancellationRequested();
 
-            if (ExceptionToThrow != null)
+            var exceptionToThrow = ExceptionToThrow;
+
+            if (exceptionToThrow != null)
             {
-                throw ExceptionToThrow;
+                throw exceptionToThrow;
             }
 
             Requests.Add(new UpdateFileDownloadRequest
