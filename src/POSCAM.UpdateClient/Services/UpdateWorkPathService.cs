@@ -73,6 +73,20 @@ namespace POSCAM.UpdateClient.Services
                 normalizedJobId);
         }
 
+        public string GetWorkerDirectory(
+            string installDirectory,
+            string jobId)
+        {
+            var installRoot = NormalizeInstallRoot(installDirectory);
+            var normalizedJobId = ValidateJobId(jobId);
+
+            return Path.Combine(
+                installRoot,
+                "_update",
+                "workers",
+                normalizedJobId);
+        }
+
         public string ResolveJobFilePath(
             string jobDirectory,
             string relativePath)
