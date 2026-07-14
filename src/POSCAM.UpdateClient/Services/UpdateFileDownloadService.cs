@@ -52,7 +52,9 @@ namespace POSCAM.UpdateClient.Services
             }
 
             var downloadUri = ValidateRequest(request);
-            var destinationPath = Path.GetFullPath(request.DestinationPath.Trim());
+            var expectedSha256 = request.ExpectedSha256.Trim();
+            var destinationPath = Path.GetFullPath(
+                request.DestinationPath.Trim());
             var destinationDirectory = Path.GetDirectoryName(destinationPath);
 
             if (string.IsNullOrWhiteSpace(destinationDirectory))
@@ -123,7 +125,7 @@ namespace POSCAM.UpdateClient.Services
 
                 if (!string.Equals(
                     actualSha256,
-                    request.ExpectedSha256,
+                    expectedSha256,
                     StringComparison.OrdinalIgnoreCase))
                 {
                     throw new UpdateDownloadException(
@@ -175,12 +177,13 @@ namespace POSCAM.UpdateClient.Services
                     "다운로드 URL이 비어 있습니다.");
             }
 
-            Uri downloadUri;
+            Uri? downloadUri;
 
             if (!Uri.TryCreate(
                     request.DownloadUrl.Trim(),
                     UriKind.Absolute,
-                    out downloadUri))
+                    out downloadUri)
+                || downloadUri == null)
             {
                 throw new UpdateDownloadException(
                     "다운로드 URL이 올바르지 않습니다.");
