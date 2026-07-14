@@ -57,8 +57,6 @@ namespace POSCAM.UpdateClient.Services
                     plan,
                     packagePath,
                     jobDirectory,
-                    temporaryRoot,
-                    finalRoot,
                     cancellationToken);
 
                 Directory.Move(temporaryRoot, finalRoot);
@@ -79,6 +77,12 @@ namespace POSCAM.UpdateClient.Services
 
         private string ValidatePlanAndGetPackagePath(UpdateApplyPlan plan)
         {
+            var packageType = plan.PackageType;
+            var packageFileNameValue = plan.PackageFileName;
+            var packagePathValue = plan.PackagePath;
+            var packageSize = plan.PackageSize;
+            var packageSha256 = plan.PackageSha256;
+
             if (plan.PlanVersion != 1
                 || !string.Equals(
                     plan.Mode,
@@ -87,19 +91,26 @@ namespace POSCAM.UpdateClient.Services
                 || string.IsNullOrWhiteSpace(plan.InstallDirectory)
                 || string.IsNullOrWhiteSpace(plan.JobId)
                 || string.IsNullOrWhiteSpace(plan.ApplicationFileName)
-                || string.IsNullOrWhiteSpace(plan.PackageType)
-                || string.IsNullOrWhiteSpace(plan.PackageFileName)
-                || string.IsNullOrWhiteSpace(plan.PackagePath)
-                || !plan.PackageSize.HasValue
-                || plan.PackageSize.Value < 0
-                || !IsValidSha256(plan.PackageSha256))
+                || packageType == null
+                || packageType.Trim().Length == 0
+                || packageFileNameValue == null
+                || packageFileNameValue.Trim().Length == 0
+                || packagePathValue == null
+                || packagePathValue.Trim().Length == 0
+                || !packageSize.HasValue
+                || packageSize.Value < 0
+                || !IsValidSha256(packageSha256))
             {
                 throw new InvalidDataException(
                     "Full Package 적용 계획이 올바르지 않습니다.");
             }
 
+            var normalizedPackageType = packageType.Trim();
+            var normalizedPackageFileName = packageFileNameValue.Trim();
+            var normalizedPackagePath = packagePathValue.Trim();
+
             if (!string.Equals(
-                plan.PackageType.Trim(),
+                normalizedPackageType,
                 "full",
                 StringComparison.OrdinalIgnoreCase))
             {
@@ -111,12 +122,12 @@ namespace POSCAM.UpdateClient.Services
                 plan.InstallDirectory,
                 plan.JobId);
             var packageFileName = _pathService.ValidateFileName(
-                plan.PackageFileName);
+                normalizedPackageFileName);
             var expectedPackagePath = _pathService.ResolveJobFilePath(
                 jobDirectory,
                 "package/" + packageFileName);
             var actualPackagePath = Path.GetFullPath(
-                plan.PackagePath.Trim());
+                normalizedPackagePath);
 
             if (!string.Equals(
                 expectedPackagePath,
@@ -165,8 +176,6 @@ namespace POSCAM.UpdateClient.Services
             UpdateApplyPlan plan,
             string packagePath,
             string jobDirectory,
-            string temporaryRoot,
-            string finalRoot,
             CancellationToken cancellationToken)
         {
             var targets = new List<UpdateApplyTarget>();
