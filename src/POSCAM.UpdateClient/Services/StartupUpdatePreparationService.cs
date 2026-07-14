@@ -150,16 +150,28 @@ namespace POSCAM.UpdateClient.Services
                     "Full Package 업데이트 응답이 없습니다.");
             }
 
-            var packageUrl = response.PackageUrl;
-            var fileName = response.FileName;
-            var sha256 = response.Sha256;
+            var packageUrl = response.PackageUrl == null
+                ? null
+                : response.PackageUrl.Trim();
+            var fileName = response.FileName == null
+                ? null
+                : response.FileName.Trim();
+            var sha256 = response.Sha256 == null
+                ? null
+                : response.Sha256.Trim();
             var fileSize = response.FileSize;
+            var packageType = response.PackageType == null
+                ? null
+                : response.PackageType.Trim();
 
-            if (string.IsNullOrWhiteSpace(packageUrl)
-                || string.IsNullOrWhiteSpace(fileName)
+            if (packageUrl == null
+                || packageUrl.Length == 0
+                || fileName == null
+                || fileName.Length == 0
                 || !fileSize.HasValue
                 || fileSize.Value < 0
-                || string.IsNullOrWhiteSpace(sha256))
+                || sha256 == null
+                || sha256.Length == 0)
             {
                 throw new InvalidDataException(
                     "Full Package 업데이트 정보가 올바르지 않습니다.");
@@ -171,7 +183,7 @@ namespace POSCAM.UpdateClient.Services
             var destinationPath = _workPathService.ResolveJobFilePath(
                 paths.JobDirectory,
                 relativeDownloadPath);
-            var expectedSha256 = sha256.Trim().ToUpperInvariant();
+            var expectedSha256 = sha256.ToUpperInvariant();
 
             var downloadedPath = await _downloadService
                 .DownloadAndVerifyAsync(
@@ -186,7 +198,7 @@ namespace POSCAM.UpdateClient.Services
                 .ConfigureAwait(false);
 
             plan.Mode = UpdateApplyModes.FullPackage;
-            plan.PackageType = response.PackageType;
+            plan.PackageType = packageType;
             plan.PackageFileName = packageFileName;
             plan.PackagePath = downloadedPath;
             plan.PackageSize = fileSize.Value;
