@@ -41,14 +41,14 @@ namespace POSCAM.UpdateClient.Services
             }
 
             var operations = BuildOperations(plan);
-            var applied = new List<ApplyOperation>();
+            var applied = new List<FileApplyOperation>();
 
             try
             {
                 foreach (var operation in operations)
                 {
                     cancellationToken.ThrowIfCancellationRequested();
-                    ApplyOperation(operation, applied);
+                    ApplySingleOperation(operation, applied);
                 }
 
                 cancellationToken.ThrowIfCancellationRequested();
@@ -61,7 +61,7 @@ namespace POSCAM.UpdateClient.Services
             }
         }
 
-        private List<ApplyOperation> BuildOperations(UpdateApplyPlan plan)
+        private List<FileApplyOperation> BuildOperations(UpdateApplyPlan plan)
         {
             if (!string.Equals(
                 plan.Mode,
@@ -91,7 +91,8 @@ namespace POSCAM.UpdateClient.Services
                 Assembly.GetExecutingAssembly().Location);
             var destinations = new HashSet<string>(
                 StringComparer.OrdinalIgnoreCase);
-            var operations = new List<ApplyOperation>(plan.Targets.Count);
+            var operations = new List<FileApplyOperation>(
+                plan.Targets.Count);
 
             foreach (var target in plan.Targets)
             {
@@ -144,7 +145,7 @@ namespace POSCAM.UpdateClient.Services
                     target.ExpectedSize,
                     target.ExpectedSha256);
 
-                operations.Add(new ApplyOperation
+                operations.Add(new FileApplyOperation
                 {
                     SourcePath = downloadedPath,
                     DestinationPath = destinationPath,
@@ -159,9 +160,9 @@ namespace POSCAM.UpdateClient.Services
             return operations;
         }
 
-        private void ApplyOperation(
-            ApplyOperation operation,
-            IList<ApplyOperation> applied)
+        private void ApplySingleOperation(
+            FileApplyOperation operation,
+            IList<FileApplyOperation> applied)
         {
             var destinationDirectory = Path.GetDirectoryName(
                 operation.DestinationPath);
@@ -218,7 +219,7 @@ namespace POSCAM.UpdateClient.Services
             }
         }
 
-        private void Rollback(IList<ApplyOperation> applied)
+        private void Rollback(IList<FileApplyOperation> applied)
         {
             Exception? rollbackFailure = null;
 
@@ -334,7 +335,7 @@ namespace POSCAM.UpdateClient.Services
             }
         }
 
-        private sealed class ApplyOperation
+        private sealed class FileApplyOperation
         {
             public string SourcePath { get; set; } = "";
 
