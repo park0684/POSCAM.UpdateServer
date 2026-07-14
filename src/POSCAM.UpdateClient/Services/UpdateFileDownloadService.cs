@@ -11,7 +11,9 @@ namespace POSCAM.UpdateClient.Services
     /// 업데이트 파일을 임시 작업 경로로 다운로드한 뒤 크기와 SHA-256을 검증한다.
     /// 검증이 완료되기 전에는 최종 다운로드 경로를 노출하지 않는다.
     /// </summary>
-    internal sealed class UpdateFileDownloadService : IDisposable
+    internal sealed class UpdateFileDownloadService :
+        IUpdateFileDownloadService,
+        IDisposable
     {
         private const int BufferSize = 81920;
 
