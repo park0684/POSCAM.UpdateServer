@@ -49,7 +49,7 @@ namespace POSCAM.UpdateClient.Services
                 foreach (var operation in operations)
                 {
                     cancellationToken.ThrowIfCancellationRequested();
-                    ApplyOperation(operation, applied);
+                    ApplySingleOperation(operation, applied);
                 }
 
                 cancellationToken.ThrowIfCancellationRequested();
@@ -184,7 +184,7 @@ namespace POSCAM.UpdateClient.Services
             return operations;
         }
 
-        private void ApplyOperation(
+        private void ApplySingleOperation(
             ApplyOperation operation,
             IList<ApplyOperation> applied)
         {
