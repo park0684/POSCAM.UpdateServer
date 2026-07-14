@@ -58,18 +58,32 @@ namespace POSCAM.UpdateClient.Services
                     || exception is NotSupportedException
                     || exception is PathTooLongException)
             {
+                UpdateClientLog.Error(
+                    options.InstallDirectory,
+                    "Preparation.PathFailed",
+                    "업데이트 작업 경로를 검증하지 못했습니다. ExitCode=20",
+                    exception);
                 return UpdateClientExitCodes.VerificationFailed;
             }
             catch (Exception exception)
                 when (exception is IOException
                     || exception is UnauthorizedAccessException)
             {
+                UpdateClientLog.Error(
+                    options.InstallDirectory,
+                    "Preparation.PathWriteFailed",
+                    "업데이트 작업 경로를 준비하지 못했습니다. ExitCode=40",
+                    exception);
                 return UpdateClientExitCodes.DownloadFailed;
             }
 
             if (checkResult.ExitCode
                 != UpdateClientExitCodes.ApplyRequired)
             {
+                UpdateClientLog.Info(
+                    paths.InstallDirectory,
+                    "Preparation.Skipped",
+                    "ExitCode=" + checkResult.ExitCode);
                 return checkResult.ExitCode;
             }
 
@@ -109,11 +123,24 @@ namespace POSCAM.UpdateClient.Services
                 }
 
                 _planStore.Save(paths.ActivePlanPath, plan);
+
+                UpdateClientLog.Info(
+                    paths.InstallDirectory,
+                    "Preparation.PlanSaved",
+                    "JobId=" + paths.JobId
+                        + " Mode=" + plan.Mode
+                        + " Targets=" + plan.Targets.Count
+                        + " ExitCode=10");
+
                 return UpdateClientExitCodes.ApplyRequired;
             }
             catch (OperationCanceledException)
                 when (cancellationToken.IsCancellationRequested)
             {
+                UpdateClientLog.Error(
+                    paths.InstallDirectory,
+                    "Preparation.Canceled",
+                    "업데이트 준비가 취소되었습니다.");
                 CleanupFailedJob(paths);
                 throw;
             }
@@ -123,6 +150,11 @@ namespace POSCAM.UpdateClient.Services
                     || exception is NotSupportedException
                     || exception is PathTooLongException)
             {
+                UpdateClientLog.Error(
+                    paths.InstallDirectory,
+                    "Preparation.VerificationFailed",
+                    "업데이트 준비 검증에 실패했습니다. ExitCode=20",
+                    exception);
                 CleanupFailedJob(paths);
                 return UpdateClientExitCodes.VerificationFailed;
             }
@@ -131,6 +163,11 @@ namespace POSCAM.UpdateClient.Services
                     || exception is IOException
                     || exception is UnauthorizedAccessException)
             {
+                UpdateClientLog.Error(
+                    paths.InstallDirectory,
+                    "Preparation.DownloadFailed",
+                    "업데이트 파일 다운로드 또는 저장에 실패했습니다. ExitCode=40",
+                    exception);
                 CleanupFailedJob(paths);
                 return UpdateClientExitCodes.DownloadFailed;
             }
@@ -185,6 +222,12 @@ namespace POSCAM.UpdateClient.Services
                 relativeDownloadPath);
             var expectedSha256 = sha256.ToUpperInvariant();
 
+            UpdateClientLog.Info(
+                paths.InstallDirectory,
+                "Download.Begin",
+                "Mode=FullPackage File=" + packageFileName
+                    + " Size=" + fileSize.Value);
+
             var downloadedPath = await _downloadService
                 .DownloadAndVerifyAsync(
                     new UpdateFileDownloadRequest
@@ -203,6 +246,12 @@ namespace POSCAM.UpdateClient.Services
             plan.PackagePath = downloadedPath;
             plan.PackageSize = fileSize.Value;
             plan.PackageSha256 = expectedSha256;
+
+            UpdateClientLog.Info(
+                paths.InstallDirectory,
+                "Download.Success",
+                "Mode=FullPackage File=" + packageFileName
+                    + " Size=" + fileSize.Value);
         }
 
         private async Task PrepareFileRepairAsync(
@@ -240,6 +289,12 @@ namespace POSCAM.UpdateClient.Services
                     .Trim()
                     .ToUpperInvariant();
 
+                UpdateClientLog.Info(
+                    paths.InstallDirectory,
+                    "Download.Begin",
+                    "Mode=FileRepair Path=" + target.RelativePath
+                        + " Size=" + target.ExpectedSize);
+
                 var downloadedPath = await _downloadService
                     .DownloadAndVerifyAsync(
                         new UpdateFileDownloadRequest
@@ -260,6 +315,12 @@ namespace POSCAM.UpdateClient.Services
                     ExpectedSha256 = expectedSha256,
                     Reason = target.Reason
                 });
+
+                UpdateClientLog.Info(
+                    paths.InstallDirectory,
+                    "Download.Success",
+                    "Mode=FileRepair Path=" + target.RelativePath
+                        + " Size=" + target.ExpectedSize);
             }
         }
 
