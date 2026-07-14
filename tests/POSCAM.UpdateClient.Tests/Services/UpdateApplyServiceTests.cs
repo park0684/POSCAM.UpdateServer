@@ -1,5 +1,6 @@
 using System;
 using System.IO;
+using System.IO.Compression;
 using System.Security.Cryptography;
 using System.Text;
 using System.Threading;
@@ -36,7 +37,11 @@ namespace POSCAM.UpdateClient.Tests.Services
             var planPath = SaveFileRepairPlan("provider.dll", updated);
             var processWait = new FakeProcessWaitService();
             var restart = new FakeApplicationRestartService();
-            var service = CreateService(processWait, restart);
+            var workerLauncher = new FakeUpdateWorkerLauncherService();
+            var service = CreateService(
+                processWait,
+                restart,
+                workerLauncher);
 
             var exitCode = await service.ApplyAsync(
                 CreateOptions(planPath),
@@ -46,6 +51,7 @@ namespace POSCAM.UpdateClient.Tests.Services
             Assert.Equal(1234, processWait.LastProcessId);
             Assert.Equal(TimeSpan.FromSeconds(30), processWait.LastTimeout);
             Assert.Equal(1, restart.CallCount);
+            Assert.Equal(0, workerLauncher.CallCount);
             Assert.False(File.Exists(planPath));
             Assert.Equal(
                 updated,
@@ -68,8 +74,12 @@ namespace POSCAM.UpdateClient.Tests.Services
                 Result = false
             };
             var restart = new FakeApplicationRestartService();
+            var workerLauncher = new FakeUpdateWorkerLauncherService();
 
-            var exitCode = await CreateService(processWait, restart)
+            var exitCode = await CreateService(
+                    processWait,
+                    restart,
+                    workerLauncher)
                 .ApplyAsync(
                     CreateOptions(planPath),
                     CancellationToken.None);
@@ -77,6 +87,7 @@ namespace POSCAM.UpdateClient.Tests.Services
             Assert.Equal(UpdateClientExitCodes.ApplyFailed, exitCode);
             Assert.Equal(original, File.ReadAllBytes(destination));
             Assert.Equal(0, restart.CallCount);
+            Assert.Equal(0, workerLauncher.CallCount);
             Assert.True(File.Exists(planPath));
         }
 
@@ -89,57 +100,99 @@ namespace POSCAM.UpdateClient.Tests.Services
             var options = CreateOptions(planPath);
             options.RestartFileName = "Other.exe";
             var restart = new FakeApplicationRestartService();
+            var workerLauncher = new FakeUpdateWorkerLauncherService();
 
             var exitCode = await CreateService(
                 new FakeProcessWaitService(),
-                restart).ApplyAsync(
+                restart,
+                workerLauncher).ApplyAsync(
                     options,
                     CancellationToken.None);
 
             Assert.Equal(UpdateClientExitCodes.ApplyFailed, exitCode);
             Assert.Equal(0, restart.CallCount);
+            Assert.Equal(0, workerLauncher.CallCount);
             Assert.True(File.Exists(planPath));
         }
 
         [Fact]
-        public async Task ApplyAsync_FullPackagePlan_IsNotAppliedInThisSlice()
+        public async Task ApplyAsync_FullPackage_StagesSavesAndLaunchesWorker()
         {
-            var plan = new UpdateApplyPlan
-            {
-                JobId = JobId,
-                InstallDirectory = _installDirectory,
-                ApplicationFileName = "PcCam.exe",
-                Mode = UpdateApplyModes.FullPackage,
-                CreatedAtUtc = DateTime.UtcNow
-            };
-            var planPath = _pathService.GetActivePlanPath(
-                _installDirectory);
-            _planStore.Save(planPath, plan);
+            var planPath = SaveFullPackagePlan();
             var restart = new FakeApplicationRestartService();
+            var workerLauncher = new FakeUpdateWorkerLauncherService();
 
             var exitCode = await CreateService(
                 new FakeProcessWaitService(),
-                restart).ApplyAsync(
+                restart,
+                workerLauncher).ApplyAsync(
+                    CreateOptions(planPath),
+                    CancellationToken.None);
+
+            Assert.Equal(UpdateClientExitCodes.Success, exitCode);
+            Assert.Equal(0, restart.CallCount);
+            Assert.Equal(1, workerLauncher.CallCount);
+            Assert.Equal(_installDirectory, workerLauncher.InstallDirectory);
+            Assert.Equal(JobId, workerLauncher.JobId);
+            Assert.Equal(planPath, workerLauncher.PlanPath);
+            Assert.Equal("PcCam.exe", workerLauncher.RestartFileName);
+            Assert.Equal(30, workerLauncher.WaitTimeoutSeconds);
+            Assert.Equal(5678, workerLauncher.ParentProcessId);
+            Assert.True(File.Exists(planPath));
+
+            var persistedPlan = _planStore.Load(planPath);
+            Assert.Equal(UpdateApplyModes.FullPackage, persistedPlan.Mode);
+            Assert.Equal(2, persistedPlan.Targets.Count);
+
+            foreach (var target in persistedPlan.Targets)
+            {
+                Assert.True(File.Exists(target.DownloadedPath));
+                Assert.Equal(UpdateApplyReasons.FullPackage, target.Reason);
+            }
+        }
+
+        [Fact]
+        public async Task ApplyAsync_FullPackageWorkerLaunchFailure_ReturnsApplyFailed()
+        {
+            var planPath = SaveFullPackagePlan();
+            var workerLauncher = new FakeUpdateWorkerLauncherService
+            {
+                ExceptionToThrow = new IOException("launch failed")
+            };
+
+            var exitCode = await CreateService(
+                new FakeProcessWaitService(),
+                new FakeApplicationRestartService(),
+                workerLauncher).ApplyAsync(
                     CreateOptions(planPath),
                     CancellationToken.None);
 
             Assert.Equal(UpdateClientExitCodes.ApplyFailed, exitCode);
-            Assert.Equal(0, restart.CallCount);
+            Assert.Equal(0, workerLauncher.CallCount);
             Assert.True(File.Exists(planPath));
+            Assert.Equal(2, _planStore.Load(planPath).Targets.Count);
         }
 
         private UpdateApplyService CreateService(
             IProcessWaitService processWaitService,
-            IApplicationRestartService restartService)
+            IApplicationRestartService restartService,
+            IUpdateWorkerLauncherService workerLauncherService)
         {
+            var hashCalculator = new FileHashCalculator();
+
             return new UpdateApplyService(
                 _planStore,
                 _pathService,
                 processWaitService,
                 new FileRepairApplyService(
                     _pathService,
-                    new FileHashCalculator()),
-                restartService);
+                    hashCalculator),
+                new FullPackageStagingService(
+                    _pathService,
+                    hashCalculator),
+                workerLauncherService,
+                restartService,
+                () => 5678);
         }
 
         private ApplyOptions CreateOptions(string planPath)
@@ -195,20 +248,102 @@ namespace POSCAM.UpdateClient.Tests.Services
             return _planStore.Save(planPath, plan);
         }
 
+        private string SaveFullPackagePlan()
+        {
+            var jobDirectory = _pathService.GetJobDirectory(
+                _installDirectory,
+                JobId);
+            var packagePath = _pathService.ResolveJobFilePath(
+                jobDirectory,
+                "package/pccam.zip");
+            var directory = Path.GetDirectoryName(packagePath);
+
+            Assert.False(string.IsNullOrWhiteSpace(directory));
+            Directory.CreateDirectory(directory!);
+
+            using (var stream = new FileStream(
+                packagePath,
+                FileMode.Create,
+                FileAccess.ReadWrite,
+                FileShare.None))
+            using (var archive = new ZipArchive(
+                stream,
+                ZipArchiveMode.Create,
+                false))
+            {
+                AddZipEntry(archive, "PcCam.exe", "new app");
+                AddZipEntry(
+                    archive,
+                    "providers/provider.dll",
+                    "new provider");
+            }
+
+            var plan = new UpdateApplyPlan
+            {
+                JobId = JobId,
+                InstallDirectory = _installDirectory,
+                ApplicationFileName = "PcCam.exe",
+                Mode = UpdateApplyModes.FullPackage,
+                CreatedAtUtc = DateTime.UtcNow,
+                PackageType = "full",
+                PackageFileName = "pccam.zip",
+                PackagePath = packagePath,
+                PackageSize = new FileInfo(packagePath).Length,
+                PackageSha256 = CalculateSha256(packagePath)
+            };
+
+            return _planStore.Save(
+                _pathService.GetActivePlanPath(_installDirectory),
+                plan);
+        }
+
+        private static void AddZipEntry(
+            ZipArchive archive,
+            string path,
+            string content)
+        {
+            var entry = archive.CreateEntry(path);
+
+            using (var writer = new StreamWriter(
+                entry.Open(),
+                new UTF8Encoding(false)))
+            {
+                writer.Write(content);
+            }
+        }
+
         private static string CalculateSha256(byte[] content)
         {
             using (var sha256 = SHA256.Create())
             {
                 var hash = sha256.ComputeHash(content);
-                var builder = new StringBuilder(hash.Length * 2);
-
-                foreach (var value in hash)
-                {
-                    builder.Append(value.ToString("X2"));
-                }
-
-                return builder.ToString();
+                return ToHex(hash);
             }
+        }
+
+        private static string CalculateSha256(string path)
+        {
+            using (var stream = new FileStream(
+                path,
+                FileMode.Open,
+                FileAccess.Read,
+                FileShare.Read))
+            using (var sha256 = SHA256.Create())
+            {
+                return ToHex(sha256.ComputeHash(stream));
+            }
+        }
+
+        private static string ToHex(byte[] hash)
+        {
+            var builder = new StringBuilder(hash.Length * 2);
+
+            foreach (var value in hash)
+            {
+                builder.Append(value.ToString("X2"));
+            }
+
+            return builder.ToString();
         }
 
         public void Dispose()
