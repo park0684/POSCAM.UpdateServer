@@ -30,7 +30,10 @@ namespace POSCAM.UpdateClient.Tests.Services
         public async Task PrepareAsync_NoWork_RemovesStalePlan()
         {
             var activePlanPath = GetActivePlanPath();
-            Directory.CreateDirectory(Path.GetDirectoryName(activePlanPath));
+            var stateDirectory = Path.GetDirectoryName(activePlanPath);
+
+            Assert.False(string.IsNullOrWhiteSpace(stateDirectory));
+            Directory.CreateDirectory(stateDirectory!);
             File.WriteAllText(activePlanPath, "stale");
 
             var service = CreateService(
@@ -82,13 +85,14 @@ namespace POSCAM.UpdateClient.Tests.Services
             Assert.Single(downloader.Requests);
 
             var plan = ReadActivePlan();
+            var packagePath = plan.PackagePath;
 
             Assert.Equal(UpdateApplyModes.FullPackage, plan.Mode);
             Assert.Equal("pccam.zip", plan.PackageFileName);
             Assert.Equal("2.0.0", plan.LatestVersion);
-            Assert.NotNull(plan.PackagePath);
-            Assert.True(File.Exists(plan.PackagePath));
-            Assert.Equal(content, File.ReadAllBytes(plan.PackagePath));
+            Assert.False(string.IsNullOrWhiteSpace(packagePath));
+            Assert.True(File.Exists(packagePath!));
+            Assert.Equal(content, File.ReadAllBytes(packagePath!));
             Assert.Empty(plan.Targets);
         }
 
