@@ -82,7 +82,8 @@ namespace POSCAM.UpdateClient.Services
                     || exception is InvalidDataException
                     || exception is IOException
                     || exception is UnauthorizedAccessException
-                    || exception is NotSupportedException)
+                    || exception is NotSupportedException
+                    || exception is System.ComponentModel.Win32Exception)
             {
                 return UpdateClientExitCodes.ApplyFailed;
             }
