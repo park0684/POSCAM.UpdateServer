@@ -338,7 +338,7 @@ namespace POSCAM.UpdateClient.Services
 
         private static bool IsValidSha256(string? value)
         {
-            if (string.IsNullOrWhiteSpace(value))
+            if (value == null)
             {
                 return false;
             }
