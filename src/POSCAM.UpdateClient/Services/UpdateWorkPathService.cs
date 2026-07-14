@@ -11,14 +11,7 @@ namespace POSCAM.UpdateClient.Services
     {
         public UpdateWorkPaths Create(string installDirectory)
         {
-            if (string.IsNullOrWhiteSpace(installDirectory))
-            {
-                throw new ArgumentException(
-                    "설치 경로가 비어 있습니다.",
-                    nameof(installDirectory));
-            }
-
-            var installRoot = Path.GetFullPath(installDirectory.Trim());
+            var installRoot = NormalizeInstallRoot(installDirectory);
             var updateRoot = Path.Combine(installRoot, "_update");
             var downloadsRoot = Path.Combine(updateRoot, "downloads");
             var stateDirectory = Path.Combine(updateRoot, "state");
@@ -41,35 +34,89 @@ namespace POSCAM.UpdateClient.Services
             };
         }
 
+        public string GetActivePlanPath(string installDirectory)
+        {
+            var installRoot = NormalizeInstallRoot(installDirectory);
+
+            return Path.Combine(
+                installRoot,
+                "_update",
+                "state",
+                "repair-plan.json");
+        }
+
+        public string GetJobDirectory(
+            string installDirectory,
+            string jobId)
+        {
+            var installRoot = NormalizeInstallRoot(installDirectory);
+            var normalizedJobId = ValidateJobId(jobId);
+
+            return Path.Combine(
+                installRoot,
+                "_update",
+                "downloads",
+                normalizedJobId);
+        }
+
+        public string GetBackupDirectory(
+            string installDirectory,
+            string jobId)
+        {
+            var installRoot = NormalizeInstallRoot(installDirectory);
+            var normalizedJobId = ValidateJobId(jobId);
+
+            return Path.Combine(
+                installRoot,
+                "_update",
+                "backups",
+                normalizedJobId);
+        }
+
         public string ResolveJobFilePath(
             string jobDirectory,
             string relativePath)
         {
-            if (string.IsNullOrWhiteSpace(jobDirectory))
-            {
-                throw new ArgumentException(
-                    "작업 경로가 비어 있습니다.",
-                    nameof(jobDirectory));
-            }
+            return ResolveUnderRoot(
+                jobDirectory,
+                relativePath,
+                "다운로드 경로가 작업 루트를 벗어납니다.");
+        }
 
+        public string ResolveBackupFilePath(
+            string backupDirectory,
+            string relativePath)
+        {
+            return ResolveUnderRoot(
+                backupDirectory,
+                relativePath,
+                "백업 경로가 백업 루트를 벗어납니다.");
+        }
+
+        public string ResolveInstallFilePath(
+            string installDirectory,
+            string relativePath)
+        {
             var normalizedRelativePath = NormalizeRelativePath(relativePath);
-            var jobRoot = Path.GetFullPath(jobDirectory.Trim());
-            var candidatePath = Path.GetFullPath(
-                Path.Combine(jobRoot, normalizedRelativePath));
-            var rootPrefix = jobRoot.TrimEnd(
-                    Path.DirectorySeparatorChar,
-                    Path.AltDirectorySeparatorChar)
-                + Path.DirectorySeparatorChar;
+            var firstSeparator = normalizedRelativePath.IndexOf(
+                Path.DirectorySeparatorChar);
+            var firstSegment = firstSeparator < 0
+                ? normalizedRelativePath
+                : normalizedRelativePath.Substring(0, firstSeparator);
 
-            if (!candidatePath.StartsWith(
-                rootPrefix,
+            if (string.Equals(
+                firstSegment,
+                "_update",
                 StringComparison.OrdinalIgnoreCase))
             {
                 throw new InvalidDataException(
-                    "다운로드 경로가 작업 루트를 벗어납니다.");
+                    "업데이트 작업 경로는 교체 대상으로 사용할 수 없습니다.");
             }
 
-            return candidatePath;
+            return ResolveUnderRoot(
+                installDirectory,
+                normalizedRelativePath,
+                "교체 경로가 설치 루트를 벗어납니다.");
         }
 
         public string ValidateFileName(string fileName)
@@ -99,6 +146,62 @@ namespace POSCAM.UpdateClient.Services
             }
 
             return normalized;
+        }
+
+        public string ValidateJobId(string jobId)
+        {
+            var normalized = ValidateFileName(jobId);
+
+            if (normalized.Length > 96)
+            {
+                throw new InvalidDataException(
+                    "업데이트 작업 ID가 너무 깁니다.");
+            }
+
+            return normalized;
+        }
+
+        private static string NormalizeInstallRoot(string installDirectory)
+        {
+            if (string.IsNullOrWhiteSpace(installDirectory))
+            {
+                throw new ArgumentException(
+                    "설치 경로가 비어 있습니다.",
+                    nameof(installDirectory));
+            }
+
+            return Path.GetFullPath(installDirectory.Trim());
+        }
+
+        private static string ResolveUnderRoot(
+            string rootDirectory,
+            string relativePath,
+            string outsideRootMessage)
+        {
+            if (string.IsNullOrWhiteSpace(rootDirectory))
+            {
+                throw new ArgumentException(
+                    "기준 경로가 비어 있습니다.",
+                    nameof(rootDirectory));
+            }
+
+            var normalizedRelativePath = NormalizeRelativePath(relativePath);
+            var root = Path.GetFullPath(rootDirectory.Trim());
+            var candidatePath = Path.GetFullPath(
+                Path.Combine(root, normalizedRelativePath));
+            var rootPrefix = root.TrimEnd(
+                    Path.DirectorySeparatorChar,
+                    Path.AltDirectorySeparatorChar)
+                + Path.DirectorySeparatorChar;
+
+            if (!candidatePath.StartsWith(
+                rootPrefix,
+                StringComparison.OrdinalIgnoreCase))
+            {
+                throw new InvalidDataException(outsideRootMessage);
+            }
+
+            return candidatePath;
         }
 
         private static string NormalizeRelativePath(string relativePath)
