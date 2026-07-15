@@ -23,8 +23,7 @@ namespace POSCAM.UpdateClient.Models
             normalizedProductCode = "";
             normalizedArchitecture = "";
 
-            if (string.IsNullOrWhiteSpace(productCode)
-                || string.IsNullOrWhiteSpace(architecture))
+            if (productCode == null || architecture == null)
             {
                 return false;
             }
@@ -36,7 +35,9 @@ namespace POSCAM.UpdateClient.Models
                 .Trim()
                 .ToLowerInvariant();
 
-            if (!IsSupportedProductCode(candidateProductCode)
+            if (candidateProductCode.Length == 0
+                || candidateArchitecture.Length == 0
+                || !IsSupportedProductCode(candidateProductCode)
                 || !IsSupportedArchitecture(candidateArchitecture))
             {
                 return false;
