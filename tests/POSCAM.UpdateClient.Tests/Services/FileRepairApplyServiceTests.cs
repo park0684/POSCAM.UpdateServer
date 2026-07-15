@@ -72,7 +72,7 @@ namespace POSCAM.UpdateClient.Tests.Services
         }
 
         [Fact]
-        public void ApplyAndRestart_RestartFailure_RollsBackAllChanges()
+        public void ApplyAndRestart_RestartFailure_RollsBackVerifiesAndRestartsPreviousApp()
         {
             var existingPath = Path.Combine("providers", "provider.dll");
             var missingPath = Path.Combine("resources", "new.dat");
@@ -87,13 +87,23 @@ namespace POSCAM.UpdateClient.Tests.Services
                 plan,
                 missingPath,
                 Encoding.UTF8.GetBytes("created"));
+            var restartCount = 0;
 
             Assert.Throws<IOException>(
                 () => CreateService().ApplyAndRestart(
                     plan,
-                    () => throw new IOException("restart failed"),
+                    () =>
+                    {
+                        restartCount++;
+
+                        if (restartCount == 1)
+                        {
+                            throw new IOException("restart failed");
+                        }
+                    },
                     CancellationToken.None));
 
+            Assert.Equal(2, restartCount);
             Assert.Equal(original, File.ReadAllBytes(existingDestination));
             Assert.False(File.Exists(
                 _pathService.ResolveInstallFilePath(
@@ -102,7 +112,36 @@ namespace POSCAM.UpdateClient.Tests.Services
         }
 
         [Fact]
-        public void ApplyAndRestart_DownloadHashMismatch_LeavesOriginalUntouched()
+        public void ApplyAndRestart_RollbackBackupTampered_DoesNotRestartUnverifiedApp()
+        {
+            var relativePath = Path.Combine("providers", "provider.dll");
+            var original = Encoding.UTF8.GetBytes("original");
+            var updated = Encoding.UTF8.GetBytes("updated");
+            var destination = WriteInstallFile(relativePath, original);
+            var plan = CreatePlan(relativePath, updated);
+            var backupPath = _pathService.ResolveBackupFilePath(
+                _pathService.GetBackupDirectory(
+                    _installDirectory,
+                    JobId),
+                relativePath);
+            var restartCount = 0;
+
+            Assert.Throws<IOException>(() => CreateService().ApplyAndRestart(
+                plan,
+                () =>
+                {
+                    restartCount++;
+                    File.WriteAllText(backupPath, "tampered");
+                    throw new IOException("restart failed");
+                },
+                CancellationToken.None));
+
+            Assert.Equal(1, restartCount);
+            Assert.Equal(updated, File.ReadAllBytes(destination));
+        }
+
+        [Fact]
+        public void ApplyAndRestart_DownloadHashMismatch_RestartsPreviousAppWithoutChanges()
         {
             var relativePath = "PcCam.config";
             var original = Encoding.UTF8.GetBytes("original");
@@ -118,7 +157,7 @@ namespace POSCAM.UpdateClient.Tests.Services
                     () => restarted = true,
                     CancellationToken.None));
 
-            Assert.False(restarted);
+            Assert.True(restarted);
             Assert.Equal(original, File.ReadAllBytes(destination));
         }
 
