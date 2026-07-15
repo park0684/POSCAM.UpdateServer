@@ -92,11 +92,23 @@ namespace POSCAM.UpdateClient.Services
                 var applicationFileName = _workPathService
                     .ValidateFileName(options.ApplicationFileName);
 
+                if (!UpdateProductIdentity.TryNormalize(
+                    options.ProductCode,
+                    options.Architecture,
+                    out var productCode,
+                    out var architecture))
+                {
+                    throw new InvalidDataException(
+                        "업데이트 제품 또는 아키텍처 정보가 올바르지 않습니다.");
+                }
+
                 Directory.CreateDirectory(paths.JobDirectory);
 
                 var plan = new UpdateApplyPlan
                 {
                     JobId = paths.JobId,
+                    ProductCode = productCode,
+                    Architecture = architecture,
                     InstallDirectory = paths.InstallDirectory,
                     ApplicationFileName = applicationFileName,
                     CreatedAtUtc = DateTime.UtcNow,
@@ -128,6 +140,8 @@ namespace POSCAM.UpdateClient.Services
                     paths.InstallDirectory,
                     "Preparation.PlanSaved",
                     "JobId=" + paths.JobId
+                        + " Product=" + plan.ProductCode
+                        + " Architecture=" + plan.Architecture
                         + " Mode=" + plan.Mode
                         + " Targets=" + plan.Targets.Count
                         + " ExitCode=10");
@@ -297,14 +311,14 @@ namespace POSCAM.UpdateClient.Services
 
                 var downloadedPath = await _downloadService
                     .DownloadAndVerifyAsync(
-                        new UpdateFileDownloadRequest
-                        {
-                            DownloadUrl = target.DownloadUrl,
-                            DestinationPath = destinationPath,
-                            ExpectedSize = target.ExpectedSize,
-                            ExpectedSha256 = expectedSha256
-                        },
-                        cancellationToken)
+                    new UpdateFileDownloadRequest
+                    {
+                        DownloadUrl = target.DownloadUrl,
+                        DestinationPath = destinationPath,
+                        ExpectedSize = target.ExpectedSize,
+                        ExpectedSha256 = expectedSha256
+                    },
+                    cancellationToken)
                     .ConfigureAwait(false);
 
                 plan.Targets.Add(new UpdateApplyTarget
