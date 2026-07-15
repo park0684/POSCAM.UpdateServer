@@ -15,6 +15,12 @@ namespace POSCAM.UpdateClient.Models
         [JsonProperty("jobId")]
         public string JobId { get; set; } = "";
 
+        [JsonProperty("productCode")]
+        public string ProductCode { get; set; } = "";
+
+        [JsonProperty("architecture")]
+        public string Architecture { get; set; } = "";
+
         [JsonProperty("installDirectory")]
         public string InstallDirectory { get; set; } = "";
 
