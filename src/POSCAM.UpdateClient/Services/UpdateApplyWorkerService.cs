@@ -47,6 +47,7 @@ namespace POSCAM.UpdateClient.Services
 
             UpdateApplyPlan? plan = null;
             string? planPath = null;
+            var recoveryHandled = false;
 
             try
             {
@@ -62,12 +63,14 @@ namespace POSCAM.UpdateClient.Services
 
                 if (!exited)
                 {
+                    recoveryHandled = true;
                     RestartAfterPrechangeFailure(
                         plan,
                         "원본 UpdateClient 종료를 확인하지 못했습니다.");
                     return UpdateClientExitCodes.ApplyFailed;
                 }
 
+                recoveryHandled = true;
                 _fullPackageApplyService.ApplyAndRestart(
                     plan,
                     () => _restartService.Restart(
@@ -86,6 +89,16 @@ namespace POSCAM.UpdateClient.Services
             catch (Exception exception)
                 when (IsHandledApplyException(exception))
             {
+                if (!recoveryHandled)
+                {
+                    await RestartAfterSafeValidationFailureAsync(
+                        options,
+                        plan,
+                        planPath,
+                        exception)
+                        .ConfigureAwait(false);
+                }
+
                 UpdateClientLog.Error(
                     plan?.InstallDirectory
                         ?? UpdateClientLog.TryResolveInstallDirectoryFromPlanPath(
@@ -125,6 +138,104 @@ namespace POSCAM.UpdateClient.Services
                 throw new IOException(
                     "Full Package worker 준비 실패 후 기존 프로그램을 다시 실행하지 못했습니다.",
                     restartException);
+            }
+        }
+
+        private async Task RestartAfterSafeValidationFailureAsync(
+            ApplyOptions options,
+            UpdateApplyPlan? plan,
+            string? planPath,
+            Exception validationException)
+        {
+            if (!TryResolveRecoveryTarget(
+                options,
+                plan,
+                planPath,
+                out var installDirectory,
+                out var applicationFileName))
+            {
+                UpdateClientLog.Error(
+                    UpdateClientLog.TryResolveInstallDirectoryFromPlanPath(
+                        planPath ?? options.PlanPath),
+                    "apply-worker.prechange.restart.skipped",
+                    "안전한 기존 프로그램 재실행 경로를 확인하지 못해 재실행을 생략했습니다.",
+                    validationException);
+                return;
+            }
+
+            var exited = await _processWaitService.WaitForExitAsync(
+                options.WaitProcessId,
+                TimeSpan.FromSeconds(options.WaitTimeoutSeconds),
+                CancellationToken.None)
+                .ConfigureAwait(false);
+
+            if (!exited)
+            {
+                UpdateClientLog.Info(
+                    installDirectory,
+                    "apply-worker.prechange.parent-still-running",
+                    "worker 검증 실패 후 원본 UpdateClient가 아직 실행 중이므로 기존 프로그램 재실행을 생략했습니다.");
+                return;
+            }
+
+            try
+            {
+                _restartService.Restart(
+                    installDirectory,
+                    applicationFileName);
+
+                UpdateClientLog.Info(
+                    installDirectory,
+                    "apply-worker.prechange.restart.success",
+                    "파일 변경 전에 worker 검증이 실패하여 기존 프로그램을 다시 실행했습니다.");
+            }
+            catch (Exception restartException)
+            {
+                UpdateClientLog.Error(
+                    installDirectory,
+                    "apply-worker.prechange.restart.failed",
+                    "worker 검증 실패 후 기존 프로그램도 다시 실행하지 못했습니다.",
+                    restartException);
+            }
+        }
+
+        private bool TryResolveRecoveryTarget(
+            ApplyOptions options,
+            UpdateApplyPlan? plan,
+            string? planPath,
+            out string installDirectory,
+            out string applicationFileName)
+        {
+            installDirectory = "";
+            applicationFileName = "";
+
+            var resolvedInstallDirectory =
+                UpdateClientLog.TryResolveInstallDirectoryFromPlanPath(
+                    planPath ?? options.PlanPath);
+
+            if (string.IsNullOrWhiteSpace(resolvedInstallDirectory))
+            {
+                return false;
+            }
+
+            try
+            {
+                var candidateFileName = plan != null
+                    && !string.IsNullOrWhiteSpace(plan.ApplicationFileName)
+                    ? plan.ApplicationFileName
+                    : options.RestartFileName;
+
+                installDirectory = Path.GetFullPath(
+                    resolvedInstallDirectory.Trim());
+                applicationFileName = _pathService.ValidateFileName(
+                    candidateFileName);
+                return true;
+            }
+            catch
+            {
+                installDirectory = "";
+                applicationFileName = "";
+                return false;
             }
         }
 
