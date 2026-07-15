@@ -106,8 +106,8 @@ namespace POSCAM.UpdateClient.Tests.Services
                 new FakeProcessWaitService(),
                 restart,
                 workerLauncher).ApplyAsync(
-                    options,
-                    CancellationToken.None);
+                options,
+                CancellationToken.None);
 
             Assert.Equal(UpdateClientExitCodes.ApplyFailed, exitCode);
             Assert.Equal(0, restart.CallCount);
@@ -135,8 +135,8 @@ namespace POSCAM.UpdateClient.Tests.Services
                 new FakeProcessWaitService(),
                 restart,
                 workerLauncher).ApplyAsync(
-                    options,
-                    CancellationToken.None);
+                options,
+                CancellationToken.None);
 
             Assert.Equal(UpdateClientExitCodes.ApplyFailed, exitCode);
             Assert.Equal(0, restart.CallCount);
@@ -155,8 +155,8 @@ namespace POSCAM.UpdateClient.Tests.Services
                 new FakeProcessWaitService(),
                 restart,
                 workerLauncher).ApplyAsync(
-                    CreateOptions(planPath),
-                    CancellationToken.None);
+                CreateOptions(planPath),
+                CancellationToken.None);
 
             Assert.Equal(UpdateClientExitCodes.Success, exitCode);
             Assert.Equal(0, restart.CallCount);
@@ -185,9 +185,10 @@ namespace POSCAM.UpdateClient.Tests.Services
         }
 
         [Fact]
-        public async Task ApplyAsync_FullPackageWorkerLaunchFailure_ReturnsApplyFailed()
+        public async Task ApplyAsync_FullPackageWorkerLaunchFailure_RestartsPreviousAppAndKeepsPlan()
         {
             var planPath = SaveFullPackagePlan();
+            var restart = new FakeApplicationRestartService();
             var workerLauncher = new FakeUpdateWorkerLauncherService
             {
                 ExceptionToThrow = new IOException("launch failed")
@@ -195,12 +196,13 @@ namespace POSCAM.UpdateClient.Tests.Services
 
             var exitCode = await CreateService(
                 new FakeProcessWaitService(),
-                new FakeApplicationRestartService(),
+                restart,
                 workerLauncher).ApplyAsync(
-                    CreateOptions(planPath),
-                    CancellationToken.None);
+                CreateOptions(planPath),
+                CancellationToken.None);
 
             Assert.Equal(UpdateClientExitCodes.ApplyFailed, exitCode);
+            Assert.Equal(1, restart.CallCount);
             Assert.Equal(0, workerLauncher.CallCount);
             Assert.True(File.Exists(planPath));
             Assert.Equal(2, _planStore.Load(planPath).Targets.Count);
