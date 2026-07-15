@@ -59,10 +59,13 @@ namespace POSCAM.UpdateClient.Services
                 throw new ArgumentNullException(nameof(options));
             }
 
+            UpdateApplyPlan? plan = null;
+            string? planPath = null;
+
             try
             {
-                var planPath = Path.GetFullPath(options.PlanPath.Trim());
-                var plan = _planStore.Load(planPath);
+                planPath = Path.GetFullPath(options.PlanPath.Trim());
+                plan = _planStore.Load(planPath);
                 ValidatePlan(planPath, plan, options);
 
                 var exited = await _processWaitService.WaitForExitAsync(
@@ -73,6 +76,10 @@ namespace POSCAM.UpdateClient.Services
 
                 if (!exited)
                 {
+                    UpdateClientLog.Error(
+                        plan.InstallDirectory,
+                        "apply.host-exit.timeout",
+                        "대상 프로그램 종료를 확인하지 못해 파일 적용을 시작하지 않았습니다.");
                     return UpdateClientExitCodes.ApplyFailed;
                 }
 
@@ -97,24 +104,11 @@ namespace POSCAM.UpdateClient.Services
                     UpdateApplyModes.FullPackage,
                     StringComparison.Ordinal))
                 {
-                    var stagingResult = _fullPackageStagingService.Stage(
-                        plan,
-                        cancellationToken);
-
-                    plan.Targets = stagingResult.Targets;
-                    _planStore.Save(planPath, plan);
-
-                    _workerLauncherService.Launch(
-                        plan.InstallDirectory,
-                        plan.JobId,
+                    return PrepareAndLaunchFullPackageWorker(
                         planPath,
-                        options.ProductCode,
-                        options.Architecture,
-                        options.RestartFileName,
-                        options.WaitTimeoutSeconds,
-                        _currentProcessIdProvider());
-
-                    return UpdateClientExitCodes.Success;
+                        plan,
+                        options,
+                        cancellationToken);
                 }
 
                 return UpdateClientExitCodes.ApplyFailed;
@@ -125,15 +119,95 @@ namespace POSCAM.UpdateClient.Services
                 throw;
             }
             catch (Exception exception)
-                when (exception is ArgumentException
-                    || exception is InvalidDataException
-                    || exception is IOException
-                    || exception is UnauthorizedAccessException
-                    || exception is NotSupportedException
-                    || exception is System.ComponentModel.Win32Exception)
+                when (IsHandledApplyException(exception))
             {
+                UpdateClientLog.Error(
+                    plan?.InstallDirectory
+                        ?? UpdateClientLog.TryResolveInstallDirectoryFromPlanPath(
+                            planPath ?? options.PlanPath),
+                    "apply.failed",
+                    "업데이트 적용을 완료하지 못했습니다. 적용 계획은 유지됩니다.",
+                    exception);
                 return UpdateClientExitCodes.ApplyFailed;
             }
+        }
+
+        private int PrepareAndLaunchFullPackageWorker(
+            string planPath,
+            UpdateApplyPlan plan,
+            ApplyOptions options,
+            CancellationToken cancellationToken)
+        {
+            try
+            {
+                var stagingResult = _fullPackageStagingService.Stage(
+                    plan,
+                    cancellationToken);
+
+                plan.Targets = stagingResult.Targets;
+                _planStore.Save(planPath, plan);
+
+                _workerLauncherService.Launch(
+                    plan.InstallDirectory,
+                    plan.JobId,
+                    planPath,
+                    options.ProductCode,
+                    options.Architecture,
+                    options.RestartFileName,
+                    options.WaitTimeoutSeconds,
+                    _currentProcessIdProvider());
+
+                return UpdateClientExitCodes.Success;
+            }
+            catch (Exception exception)
+                when (IsHandledApplyException(exception))
+            {
+                RestartPreviousApplicationAfterPrechangeFailure(
+                    plan,
+                    exception);
+                return UpdateClientExitCodes.ApplyFailed;
+            }
+        }
+
+        private void RestartPreviousApplicationAfterPrechangeFailure(
+            UpdateApplyPlan plan,
+            Exception applyException)
+        {
+            try
+            {
+                _restartService.Restart(
+                    plan.InstallDirectory,
+                    plan.ApplicationFileName);
+
+                UpdateClientLog.Info(
+                    plan.InstallDirectory,
+                    "apply.prechange.restart.success",
+                    "파일 변경 전에 Full Package 준비가 실패하여 기존 프로그램을 다시 실행했습니다.");
+            }
+            catch (Exception restartException)
+            {
+                UpdateClientLog.Error(
+                    plan.InstallDirectory,
+                    "apply.prechange.restart.failed",
+                    "파일 변경 전 적용 실패 후 기존 프로그램도 다시 실행하지 못했습니다.",
+                    restartException);
+
+                throw new IOException(
+                    "Full Package 준비 실패 후 기존 프로그램을 다시 실행하지 못했습니다.",
+                    new AggregateException(
+                        applyException,
+                        restartException));
+            }
+        }
+
+        private static bool IsHandledApplyException(Exception exception)
+        {
+            return exception is ArgumentException
+                || exception is InvalidDataException
+                || exception is IOException
+                || exception is UnauthorizedAccessException
+                || exception is NotSupportedException
+                || exception is System.ComponentModel.Win32Exception;
         }
 
         private void ValidatePlan(
