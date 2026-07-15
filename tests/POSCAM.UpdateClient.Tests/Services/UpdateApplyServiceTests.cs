@@ -92,7 +92,7 @@ namespace POSCAM.UpdateClient.Tests.Services
         }
 
         [Fact]
-        public async Task ApplyAsync_RestartNameMismatch_ReturnsApplyFailed()
+        public async Task ApplyAsync_RestartNameMismatch_RestartsSafePlanTargetAndReturnsApplyFailed()
         {
             var planPath = SaveFileRepairPlan(
                 "provider.dll",
@@ -110,7 +110,8 @@ namespace POSCAM.UpdateClient.Tests.Services
                 CancellationToken.None);
 
             Assert.Equal(UpdateClientExitCodes.ApplyFailed, exitCode);
-            Assert.Equal(0, restart.CallCount);
+            Assert.Equal(1, restart.CallCount);
+            Assert.Equal("PcCam.exe", restart.LastApplicationFileName);
             Assert.Equal(0, workerLauncher.CallCount);
             Assert.True(File.Exists(planPath));
         }
@@ -118,7 +119,7 @@ namespace POSCAM.UpdateClient.Tests.Services
         [Theory]
         [InlineData("CAMVIEWER", "x86")]
         [InlineData("PCCAM", "x64")]
-        public async Task ApplyAsync_ProductIdentityMismatch_ReturnsApplyFailed(
+        public async Task ApplyAsync_ProductIdentityMismatch_RestartsSafePlanTargetAndReturnsApplyFailed(
             string productCode,
             string architecture)
         {
@@ -139,7 +140,8 @@ namespace POSCAM.UpdateClient.Tests.Services
                 CancellationToken.None);
 
             Assert.Equal(UpdateClientExitCodes.ApplyFailed, exitCode);
-            Assert.Equal(0, restart.CallCount);
+            Assert.Equal(1, restart.CallCount);
+            Assert.Equal("PcCam.exe", restart.LastApplicationFileName);
             Assert.Equal(0, workerLauncher.CallCount);
             Assert.True(File.Exists(planPath));
         }
