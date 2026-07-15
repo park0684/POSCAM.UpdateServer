@@ -16,7 +16,9 @@ namespace POSCAM.UpdateClient.Tests.Models
                     "apply",
                     "--plan", "C:\\POSCAM\\_update\\state\\repair-plan.json",
                     "--wait-process-id", "1234",
-                    "--restart", "PcCam.exe"
+                    "--restart", "PcCam.exe",
+                    "--product-code", "pccam",
+                    "--architecture", "X86"
                 },
                 out options);
 
@@ -24,6 +26,8 @@ namespace POSCAM.UpdateClient.Tests.Models
             Assert.NotNull(options);
             Assert.Equal(1234, options!.WaitProcessId);
             Assert.Equal("PcCam.exe", options.RestartFileName);
+            Assert.Equal("PCCAM", options.ProductCode);
+            Assert.Equal("x86", options.Architecture);
             Assert.Equal(
                 ApplyOptions.DefaultWaitTimeoutSeconds,
                 options.WaitTimeoutSeconds);
@@ -40,7 +44,9 @@ namespace POSCAM.UpdateClient.Tests.Models
                     "apply",
                     "--plan", "repair-plan.json",
                     "--wait-process-id", "12",
-                    "--restart", "PcCam.exe",
+                    "--restart", "CamViewerClient.exe",
+                    "--product-code", "CAMVIEWER",
+                    "--architecture", "x64",
                     "--wait-timeout-seconds", "120"
                 },
                 out options);
@@ -48,6 +54,8 @@ namespace POSCAM.UpdateClient.Tests.Models
             Assert.True(success);
             Assert.NotNull(options);
             Assert.Equal(120, options!.WaitTimeoutSeconds);
+            Assert.Equal("CAMVIEWER", options.ProductCode);
+            Assert.Equal("x64", options.Architecture);
         }
 
         [Theory]
@@ -59,13 +67,7 @@ namespace POSCAM.UpdateClient.Tests.Models
             ApplyOptions? options;
 
             var success = ApplyOptions.TryParse(
-                new[]
-                {
-                    "apply",
-                    "--plan", "repair-plan.json",
-                    "--wait-process-id", processId,
-                    "--restart", "PcCam.exe"
-                },
+                CreateRequiredArguments(processId),
                 out options);
 
             Assert.False(success);
@@ -79,17 +81,35 @@ namespace POSCAM.UpdateClient.Tests.Models
         public void TryParse_InvalidTimeout_IsRejected(string timeout)
         {
             ApplyOptions? options;
+            var args = new System.Collections.Generic.List<string>(
+                CreateRequiredArguments("12"))
+            {
+                "--wait-timeout-seconds",
+                timeout
+            };
 
             var success = ApplyOptions.TryParse(
-                new[]
-                {
-                    "apply",
-                    "--plan", "repair-plan.json",
-                    "--wait-process-id", "12",
-                    "--restart", "PcCam.exe",
-                    "--wait-timeout-seconds", timeout
-                },
+                args.ToArray(),
                 out options);
+
+            Assert.False(success);
+            Assert.Null(options);
+        }
+
+        [Theory]
+        [InlineData("UNKNOWN", "x86")]
+        [InlineData("PCCAM", "any")]
+        [InlineData("PCCAM", "arm64")]
+        public void TryParse_UnsupportedIdentity_IsRejected(
+            string productCode,
+            string architecture)
+        {
+            ApplyOptions? options;
+            var args = CreateRequiredArguments("12");
+            args[8] = productCode;
+            args[10] = architecture;
+
+            var success = ApplyOptions.TryParse(args, out options);
 
             Assert.False(success);
             Assert.Null(options);
@@ -99,38 +119,54 @@ namespace POSCAM.UpdateClient.Tests.Models
         public void TryParse_UnknownOption_IsRejected()
         {
             ApplyOptions? options;
+            var args = new System.Collections.Generic.List<string>(
+                CreateRequiredArguments("12"))
+            {
+                "--unknown",
+                "value"
+            };
 
             var success = ApplyOptions.TryParse(
-                new[]
-                {
-                    "apply",
-                    "--plan", "repair-plan.json",
-                    "--wait-process-id", "12",
-                    "--restart", "PcCam.exe",
-                    "--unknown", "value"
-                },
+                args.ToArray(),
                 out options);
 
             Assert.False(success);
             Assert.Null(options);
         }
 
-        [Fact]
-        public void TryParse_MissingRequiredOption_IsRejected()
+        [Theory]
+        [InlineData("--restart")]
+        [InlineData("--product-code")]
+        [InlineData("--architecture")]
+        public void TryParse_MissingRequiredOption_IsRejected(
+            string optionToRemove)
         {
             ApplyOptions? options;
+            var args = new System.Collections.Generic.List<string>(
+                CreateRequiredArguments("12"));
+            var index = args.IndexOf(optionToRemove);
+            args.RemoveAt(index + 1);
+            args.RemoveAt(index);
 
             var success = ApplyOptions.TryParse(
-                new[]
-                {
-                    "apply",
-                    "--plan", "repair-plan.json",
-                    "--wait-process-id", "12"
-                },
+                args.ToArray(),
                 out options);
 
             Assert.False(success);
             Assert.Null(options);
+        }
+
+        private static string[] CreateRequiredArguments(string processId)
+        {
+            return new[]
+            {
+                "apply",
+                "--plan", "repair-plan.json",
+                "--wait-process-id", processId,
+                "--restart", "PcCam.exe",
+                "--product-code", "PCCAM",
+                "--architecture", "x86"
+            };
         }
     }
 }
