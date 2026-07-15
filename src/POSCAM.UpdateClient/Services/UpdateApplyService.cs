@@ -61,6 +61,8 @@ namespace POSCAM.UpdateClient.Services
 
             UpdateApplyPlan? plan = null;
             string? planPath = null;
+            var hostExitConfirmed = false;
+            var recoveryHandled = false;
 
             try
             {
@@ -83,11 +85,14 @@ namespace POSCAM.UpdateClient.Services
                     return UpdateClientExitCodes.ApplyFailed;
                 }
 
+                hostExitConfirmed = true;
+
                 if (string.Equals(
                     plan.Mode,
                     UpdateApplyModes.FileRepair,
                     StringComparison.Ordinal))
                 {
+                    recoveryHandled = true;
                     _fileRepairApplyService.ApplyAndRestart(
                         plan,
                         () => _restartService.Restart(
@@ -104,6 +109,7 @@ namespace POSCAM.UpdateClient.Services
                     UpdateApplyModes.FullPackage,
                     StringComparison.Ordinal))
                 {
+                    recoveryHandled = true;
                     return PrepareAndLaunchFullPackageWorker(
                         planPath,
                         plan,
@@ -111,7 +117,8 @@ namespace POSCAM.UpdateClient.Services
                         cancellationToken);
                 }
 
-                return UpdateClientExitCodes.ApplyFailed;
+                throw new InvalidDataException(
+                    "지원하지 않는 업데이트 적용 모드입니다.");
             }
             catch (OperationCanceledException)
                 when (cancellationToken.IsCancellationRequested)
@@ -121,6 +128,17 @@ namespace POSCAM.UpdateClient.Services
             catch (Exception exception)
                 when (IsHandledApplyException(exception))
             {
+                if (!recoveryHandled)
+                {
+                    await RestartAfterSafePrechangeFailureAsync(
+                        options,
+                        plan,
+                        planPath,
+                        hostExitConfirmed,
+                        exception)
+                        .ConfigureAwait(false);
+                }
+
                 UpdateClientLog.Error(
                     plan?.InstallDirectory
                         ?? UpdateClientLog.TryResolveInstallDirectoryFromPlanPath(
@@ -197,6 +215,108 @@ namespace POSCAM.UpdateClient.Services
                     new AggregateException(
                         applyException,
                         restartException));
+            }
+        }
+
+        private async Task RestartAfterSafePrechangeFailureAsync(
+            ApplyOptions options,
+            UpdateApplyPlan? plan,
+            string? planPath,
+            bool hostExitConfirmed,
+            Exception applyException)
+        {
+            if (!TryResolveRecoveryTarget(
+                options,
+                plan,
+                planPath,
+                out var installDirectory,
+                out var applicationFileName))
+            {
+                UpdateClientLog.Error(
+                    UpdateClientLog.TryResolveInstallDirectoryFromPlanPath(
+                        planPath ?? options.PlanPath),
+                    "apply.prechange.restart.skipped",
+                    "안전한 기존 프로그램 재실행 경로를 확인하지 못해 재실행을 생략했습니다.",
+                    applyException);
+                return;
+            }
+
+            if (!hostExitConfirmed)
+            {
+                var exited = await _processWaitService.WaitForExitAsync(
+                    options.WaitProcessId,
+                    TimeSpan.FromSeconds(options.WaitTimeoutSeconds),
+                    CancellationToken.None)
+                    .ConfigureAwait(false);
+
+                if (!exited)
+                {
+                    UpdateClientLog.Info(
+                        installDirectory,
+                        "apply.prechange.host-still-running",
+                        "적용 실패 후에도 기존 프로그램 프로세스가 실행 중이므로 중복 재실행하지 않았습니다.");
+                    return;
+                }
+            }
+
+            try
+            {
+                _restartService.Restart(
+                    installDirectory,
+                    applicationFileName);
+
+                UpdateClientLog.Info(
+                    installDirectory,
+                    "apply.prechange.restart.success",
+                    "파일 변경 전에 적용이 실패하여 기존 프로그램을 다시 실행했습니다.");
+            }
+            catch (Exception restartException)
+            {
+                UpdateClientLog.Error(
+                    installDirectory,
+                    "apply.prechange.restart.failed",
+                    "파일 변경 전 적용 실패 후 기존 프로그램도 다시 실행하지 못했습니다.",
+                    restartException);
+            }
+        }
+
+        private bool TryResolveRecoveryTarget(
+            ApplyOptions options,
+            UpdateApplyPlan? plan,
+            string? planPath,
+            out string installDirectory,
+            out string applicationFileName)
+        {
+            installDirectory = "";
+            applicationFileName = "";
+
+            var resolvedInstallDirectory =
+                UpdateClientLog.TryResolveInstallDirectoryFromPlanPath(
+                    planPath ?? options.PlanPath);
+
+            if (string.IsNullOrWhiteSpace(resolvedInstallDirectory))
+            {
+                return false;
+            }
+
+            try
+            {
+                var candidateFileName = plan != null
+                    && !string.IsNullOrWhiteSpace(plan.ApplicationFileName)
+                    ? plan.ApplicationFileName
+                    : options.RestartFileName;
+
+                installDirectory = Path.GetFullPath(
+                    resolvedInstallDirectory.Trim());
+                applicationFileName = _pathService.ValidateFileName(
+                    candidateFileName);
+                return true;
+            }
+            catch
+            {
+                installDirectory = "";
+                applicationFileName = "";
+                return false;
             }
         }
 
