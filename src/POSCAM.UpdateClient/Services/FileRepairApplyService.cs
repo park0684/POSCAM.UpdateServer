@@ -40,11 +40,12 @@ namespace POSCAM.UpdateClient.Services
                 throw new ArgumentNullException(nameof(restartAction));
             }
 
-            var operations = BuildOperations(plan);
             var applied = new List<FileApplyOperation>();
 
             try
             {
+                var operations = BuildOperations(plan);
+
                 foreach (var operation in operations)
                 {
                     cancellationToken.ThrowIfCancellationRequested();
@@ -54,9 +55,13 @@ namespace POSCAM.UpdateClient.Services
                 cancellationToken.ThrowIfCancellationRequested();
                 restartAction();
             }
-            catch
+            catch (Exception applyException)
             {
-                Rollback(applied);
+                RecoverPreviousApplication(
+                    plan.InstallDirectory,
+                    applied,
+                    restartAction,
+                    applyException);
                 throw;
             }
         }
@@ -192,6 +197,15 @@ namespace POSCAM.UpdateClient.Services
                     operation.DestinationPath,
                     operation.BackupPath,
                     true);
+
+                var backupFile = new FileInfo(operation.BackupPath);
+                operation.OriginalSize = backupFile.Length;
+                operation.OriginalSha256 =
+                    _hashCalculator.CalculateSha256(operation.BackupPath);
+                VerifyFile(
+                    operation.BackupPath,
+                    operation.OriginalSize,
+                    operation.OriginalSha256);
             }
 
             applied.Add(operation);
@@ -219,7 +233,70 @@ namespace POSCAM.UpdateClient.Services
             }
         }
 
-        private void Rollback(IList<FileApplyOperation> applied)
+        private void RecoverPreviousApplication(
+            string installDirectory,
+            IList<FileApplyOperation> applied,
+            Action restartAction,
+            Exception applyException)
+        {
+            var hadAppliedChanges = applied.Count > 0;
+
+            try
+            {
+                RollbackAndVerify(applied);
+
+                UpdateClientLog.Info(
+                    installDirectory,
+                    hadAppliedChanges
+                        ? "apply.rollback.verified"
+                        : "apply.prechange.verified",
+                    hadAppliedChanges
+                        ? "파일 복구 적용 실패 후 기존 파일 복원과 무결성 검증을 완료했습니다."
+                        : "파일 변경 전에 적용이 실패하여 기존 설치 상태를 확인했습니다.");
+            }
+            catch (Exception rollbackException)
+            {
+                UpdateClientLog.Error(
+                    installDirectory,
+                    "apply.rollback.failed",
+                    "파일 복구 적용 실패 후 기존 파일 복원 또는 무결성 검증에 실패했습니다.",
+                    rollbackException);
+
+                throw new IOException(
+                    "업데이트 적용 실패 후 기존 파일 복원 또는 무결성 검증도 완료하지 못했습니다.",
+                    new AggregateException(
+                        applyException,
+                        rollbackException));
+            }
+
+            try
+            {
+                restartAction();
+
+                UpdateClientLog.Info(
+                    installDirectory,
+                    hadAppliedChanges
+                        ? "apply.rollback.restart.success"
+                        : "apply.prechange.restart.success",
+                    "현재 설치된 기존 프로그램을 다시 실행했습니다.");
+            }
+            catch (Exception restartException)
+            {
+                UpdateClientLog.Error(
+                    installDirectory,
+                    "apply.recovery.restart.failed",
+                    "기존 설치 상태는 확인했지만 프로그램을 다시 실행하지 못했습니다.",
+                    restartException);
+
+                throw new IOException(
+                    "기존 파일 복원 후 프로그램을 다시 실행하지 못했습니다.",
+                    new AggregateException(
+                        applyException,
+                        restartException));
+            }
+        }
+
+        private void RollbackAndVerify(IList<FileApplyOperation> applied)
         {
             Exception? rollbackFailure = null;
 
@@ -238,14 +315,28 @@ namespace POSCAM.UpdateClient.Services
                                 operation.BackupPath);
                         }
 
+                        VerifyFile(
+                            operation.BackupPath,
+                            operation.OriginalSize,
+                            operation.OriginalSha256);
                         File.Copy(
                             operation.BackupPath,
                             operation.DestinationPath,
                             true);
+                        VerifyFile(
+                            operation.DestinationPath,
+                            operation.OriginalSize,
+                            operation.OriginalSha256);
                     }
                     else
                     {
                         DeleteIfExists(operation.DestinationPath);
+
+                        if (File.Exists(operation.DestinationPath))
+                        {
+                            throw new IOException(
+                                "Rollback 대상 신규 파일을 삭제하지 못했습니다.");
+                        }
                     }
                 }
                 catch (Exception exception)
@@ -261,7 +352,7 @@ namespace POSCAM.UpdateClient.Services
             if (rollbackFailure != null)
             {
                 throw new IOException(
-                    "업데이트 적용 실패 후 rollback도 완료하지 못했습니다.",
+                    "업데이트 적용 실패 후 rollback 또는 무결성 검증을 완료하지 못했습니다.",
                     rollbackFailure);
             }
         }
@@ -346,6 +437,10 @@ namespace POSCAM.UpdateClient.Services
             public long ExpectedSize { get; set; }
 
             public string ExpectedSha256 { get; set; } = "";
+
+            public long OriginalSize { get; set; }
+
+            public string OriginalSha256 { get; set; } = "";
 
             public bool HadOriginal { get; set; }
         }
