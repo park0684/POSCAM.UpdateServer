@@ -294,7 +294,8 @@ namespace POSCAM.UpdateClient.Services
                 UpdateClientLog.TryResolveInstallDirectoryFromPlanPath(
                     planPath ?? options.PlanPath);
 
-            if (string.IsNullOrWhiteSpace(resolvedInstallDirectory))
+            if (resolvedInstallDirectory == null
+                || resolvedInstallDirectory.Trim().Length == 0)
             {
                 return false;
             }
