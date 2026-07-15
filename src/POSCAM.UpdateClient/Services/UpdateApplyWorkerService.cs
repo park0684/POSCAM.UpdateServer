@@ -103,10 +103,33 @@ namespace POSCAM.UpdateClient.Services
                 || string.IsNullOrWhiteSpace(plan.InstallDirectory)
                 || string.IsNullOrWhiteSpace(plan.ApplicationFileName)
                 || plan.Targets == null
-                || plan.Targets.Count == 0)
+                || plan.Targets.Count == 0
+                || !UpdateProductIdentity.TryNormalize(
+                    plan.ProductCode,
+                    plan.Architecture,
+                    out var planProductCode,
+                    out var planArchitecture)
+                || !UpdateProductIdentity.TryNormalize(
+                    options.ProductCode,
+                    options.Architecture,
+                    out var optionProductCode,
+                    out var optionArchitecture))
             {
                 throw new InvalidDataException(
                     "Full Package worker 적용 계획이 올바르지 않습니다.");
+            }
+
+            if (!string.Equals(
+                    planProductCode,
+                    optionProductCode,
+                    StringComparison.Ordinal)
+                || !string.Equals(
+                    planArchitecture,
+                    optionArchitecture,
+                    StringComparison.Ordinal))
+            {
+                throw new InvalidDataException(
+                    "worker 요청의 제품 또는 아키텍처가 계획과 일치하지 않습니다.");
             }
 
             _pathService.ValidateJobId(plan.JobId);
