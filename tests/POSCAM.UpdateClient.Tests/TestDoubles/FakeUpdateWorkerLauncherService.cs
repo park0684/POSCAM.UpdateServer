@@ -13,6 +13,10 @@ namespace POSCAM.UpdateClient.Tests.TestDoubles
 
         public string? PlanPath { get; private set; }
 
+        public string? ProductCode { get; private set; }
+
+        public string? Architecture { get; private set; }
+
         public string? RestartFileName { get; private set; }
 
         public int WaitTimeoutSeconds { get; private set; }
@@ -25,6 +29,8 @@ namespace POSCAM.UpdateClient.Tests.TestDoubles
             string installDirectory,
             string jobId,
             string planPath,
+            string productCode,
+            string architecture,
             string restartFileName,
             int waitTimeoutSeconds,
             int parentProcessId)
@@ -38,6 +44,8 @@ namespace POSCAM.UpdateClient.Tests.TestDoubles
             InstallDirectory = installDirectory;
             JobId = jobId;
             PlanPath = planPath;
+            ProductCode = productCode;
+            Architecture = architecture;
             RestartFileName = restartFileName;
             WaitTimeoutSeconds = waitTimeoutSeconds;
             ParentProcessId = parentProcessId;
