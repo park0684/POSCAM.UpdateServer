@@ -3,6 +3,7 @@ using System.Diagnostics;
 using System.IO;
 using System.Reflection;
 using Newtonsoft.Json;
+using POSCAM.UpdateClient.Models;
 
 namespace POSCAM.UpdateClient.Services
 {
@@ -48,6 +49,8 @@ namespace POSCAM.UpdateClient.Services
             string installDirectory,
             string jobId,
             string planPath,
+            string productCode,
+            string architecture,
             string restartFileName,
             int waitTimeoutSeconds,
             int parentProcessId)
@@ -57,6 +60,16 @@ namespace POSCAM.UpdateClient.Services
                 throw new ArgumentException(
                     "적용 계획 경로가 비어 있습니다.",
                     nameof(planPath));
+            }
+
+            if (!UpdateProductIdentity.TryNormalize(
+                productCode,
+                architecture,
+                out var normalizedProductCode,
+                out var normalizedArchitecture))
+            {
+                throw new ArgumentException(
+                    "worker 제품 또는 아키텍처 정보가 올바르지 않습니다.");
             }
 
             if (waitTimeoutSeconds <= 0 || waitTimeoutSeconds > 600)
@@ -117,6 +130,8 @@ namespace POSCAM.UpdateClient.Services
                     CreateNoWindow = true,
                     Arguments = BuildArguments(
                         normalizedPlanPath,
+                        normalizedProductCode,
+                        normalizedArchitecture,
                         normalizedRestartFileName,
                         waitTimeoutSeconds,
                         parentProcessId)
@@ -133,6 +148,8 @@ namespace POSCAM.UpdateClient.Services
 
         private static string BuildArguments(
             string planPath,
+            string productCode,
+            string architecture,
             string restartFileName,
             int waitTimeoutSeconds,
             int parentProcessId)
@@ -140,6 +157,8 @@ namespace POSCAM.UpdateClient.Services
             return "apply-worker"
                 + " --plan " + Quote(planPath)
                 + " --wait-process-id " + parentProcessId
+                + " --product-code " + Quote(productCode)
+                + " --architecture " + Quote(architecture)
                 + " --restart " + Quote(restartFileName)
                 + " --wait-timeout-seconds " + waitTimeoutSeconds;
         }
