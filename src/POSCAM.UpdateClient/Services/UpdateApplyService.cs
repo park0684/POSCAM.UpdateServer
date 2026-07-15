@@ -108,6 +108,8 @@ namespace POSCAM.UpdateClient.Services
                         plan.InstallDirectory,
                         plan.JobId,
                         planPath,
+                        options.ProductCode,
+                        options.Architecture,
                         options.RestartFileName,
                         options.WaitTimeoutSeconds,
                         _currentProcessIdProvider());
@@ -142,10 +144,33 @@ namespace POSCAM.UpdateClient.Services
             if (plan.PlanVersion != 1
                 || string.IsNullOrWhiteSpace(plan.JobId)
                 || string.IsNullOrWhiteSpace(plan.InstallDirectory)
-                || string.IsNullOrWhiteSpace(plan.ApplicationFileName))
+                || string.IsNullOrWhiteSpace(plan.ApplicationFileName)
+                || !UpdateProductIdentity.TryNormalize(
+                    plan.ProductCode,
+                    plan.Architecture,
+                    out var planProductCode,
+                    out var planArchitecture)
+                || !UpdateProductIdentity.TryNormalize(
+                    options.ProductCode,
+                    options.Architecture,
+                    out var optionProductCode,
+                    out var optionArchitecture))
             {
                 throw new InvalidDataException(
                     "적용 계획의 필수 정보가 올바르지 않습니다.");
+            }
+
+            if (!string.Equals(
+                    planProductCode,
+                    optionProductCode,
+                    StringComparison.Ordinal)
+                || !string.Equals(
+                    planArchitecture,
+                    optionArchitecture,
+                    StringComparison.Ordinal))
+            {
+                throw new InvalidDataException(
+                    "적용 요청의 제품 또는 아키텍처가 계획과 일치하지 않습니다.");
             }
 
             _pathService.ValidateJobId(plan.JobId);
