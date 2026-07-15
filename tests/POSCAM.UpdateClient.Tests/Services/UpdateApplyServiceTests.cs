@@ -115,6 +115,35 @@ namespace POSCAM.UpdateClient.Tests.Services
             Assert.True(File.Exists(planPath));
         }
 
+        [Theory]
+        [InlineData("CAMVIEWER", "x86")]
+        [InlineData("PCCAM", "x64")]
+        public async Task ApplyAsync_ProductIdentityMismatch_ReturnsApplyFailed(
+            string productCode,
+            string architecture)
+        {
+            var planPath = SaveFileRepairPlan(
+                "provider.dll",
+                Encoding.UTF8.GetBytes("updated"));
+            var options = CreateOptions(planPath);
+            options.ProductCode = productCode;
+            options.Architecture = architecture;
+            var restart = new FakeApplicationRestartService();
+            var workerLauncher = new FakeUpdateWorkerLauncherService();
+
+            var exitCode = await CreateService(
+                new FakeProcessWaitService(),
+                restart,
+                workerLauncher).ApplyAsync(
+                    options,
+                    CancellationToken.None);
+
+            Assert.Equal(UpdateClientExitCodes.ApplyFailed, exitCode);
+            Assert.Equal(0, restart.CallCount);
+            Assert.Equal(0, workerLauncher.CallCount);
+            Assert.True(File.Exists(planPath));
+        }
+
         [Fact]
         public async Task ApplyAsync_FullPackage_StagesSavesAndLaunchesWorker()
         {
@@ -135,12 +164,16 @@ namespace POSCAM.UpdateClient.Tests.Services
             Assert.Equal(_installDirectory, workerLauncher.InstallDirectory);
             Assert.Equal(JobId, workerLauncher.JobId);
             Assert.Equal(planPath, workerLauncher.PlanPath);
+            Assert.Equal("PCCAM", workerLauncher.ProductCode);
+            Assert.Equal("x86", workerLauncher.Architecture);
             Assert.Equal("PcCam.exe", workerLauncher.RestartFileName);
             Assert.Equal(30, workerLauncher.WaitTimeoutSeconds);
             Assert.Equal(5678, workerLauncher.ParentProcessId);
             Assert.True(File.Exists(planPath));
 
             var persistedPlan = _planStore.Load(planPath);
+            Assert.Equal("PCCAM", persistedPlan.ProductCode);
+            Assert.Equal("x86", persistedPlan.Architecture);
             Assert.Equal(UpdateApplyModes.FullPackage, persistedPlan.Mode);
             Assert.Equal(2, persistedPlan.Targets.Count);
 
@@ -202,6 +235,8 @@ namespace POSCAM.UpdateClient.Tests.Services
                 PlanPath = planPath,
                 WaitProcessId = 1234,
                 RestartFileName = "PcCam.exe",
+                ProductCode = "PCCAM",
+                Architecture = "x86",
                 WaitTimeoutSeconds = 30
             };
         }
@@ -228,6 +263,8 @@ namespace POSCAM.UpdateClient.Tests.Services
             var plan = new UpdateApplyPlan
             {
                 JobId = JobId,
+                ProductCode = "PCCAM",
+                Architecture = "x86",
                 InstallDirectory = _installDirectory,
                 ApplicationFileName = "PcCam.exe",
                 Mode = UpdateApplyModes.FileRepair,
@@ -281,6 +318,8 @@ namespace POSCAM.UpdateClient.Tests.Services
             var plan = new UpdateApplyPlan
             {
                 JobId = JobId,
+                ProductCode = "PCCAM",
+                Architecture = "x86",
                 InstallDirectory = _installDirectory,
                 ApplicationFileName = "PcCam.exe",
                 Mode = UpdateApplyModes.FullPackage,
