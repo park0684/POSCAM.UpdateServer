@@ -87,6 +87,8 @@ namespace POSCAM.UpdateClient.Tests.Services
             var plan = ReadActivePlan();
             var packagePath = plan.PackagePath;
 
+            Assert.Equal("PCCAM", plan.ProductCode);
+            Assert.Equal("x86", plan.Architecture);
             Assert.Equal(UpdateApplyModes.FullPackage, plan.Mode);
             Assert.Equal("pccam.zip", plan.PackageFileName);
             Assert.Equal("2.0.0", plan.LatestVersion);
@@ -142,6 +144,8 @@ namespace POSCAM.UpdateClient.Tests.Services
             var plan = ReadActivePlan();
             var applyTarget = Assert.Single(plan.Targets);
 
+            Assert.Equal("PCCAM", plan.ProductCode);
+            Assert.Equal("x86", plan.Architecture);
             Assert.Equal(UpdateApplyModes.FileRepair, plan.Mode);
             Assert.Equal(target.RelativePath, applyTarget.RelativePath);
             Assert.Equal(RepairReasons.Missing, applyTarget.Reason);
@@ -236,6 +240,25 @@ namespace POSCAM.UpdateClient.Tests.Services
             Assert.False(File.Exists(GetActivePlanPath()));
         }
 
+        [Fact]
+        public async Task PrepareAsync_InvalidProductIdentity_ReturnsVerificationFailed()
+        {
+            var options = CreateOptions();
+            options.Architecture = "any";
+            var downloader = new FakeUpdateFileDownloadService();
+
+            var exitCode = await CreateService(downloader).PrepareAsync(
+                options,
+                CreateFullPackageResult(Encoding.UTF8.GetBytes("package")),
+                CancellationToken.None);
+
+            Assert.Equal(
+                UpdateClientExitCodes.VerificationFailed,
+                exitCode);
+            Assert.Empty(downloader.Requests);
+            Assert.False(File.Exists(GetActivePlanPath()));
+        }
+
         private StartupUpdatePreparationService CreateService(
             IUpdateFileDownloadService downloader)
         {
@@ -249,6 +272,8 @@ namespace POSCAM.UpdateClient.Tests.Services
         {
             return new StartupCheckOptions
             {
+                ProductCode = "PCCAM",
+                Architecture = "x86",
                 InstallDirectory = _installDirectory,
                 ApplicationFileName = "PcCam.exe",
                 CurrentVersionOverride = "1.0.0"
