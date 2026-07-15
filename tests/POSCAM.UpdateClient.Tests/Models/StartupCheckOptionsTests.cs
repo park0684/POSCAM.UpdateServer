@@ -6,7 +6,7 @@ namespace POSCAM.UpdateClient.Tests.Models
     public sealed class StartupCheckOptionsTests
     {
         [Fact]
-        public void TryParse_MinimumArguments_UsesDefaults()
+        public void TryParse_RequiredArguments_UsesDefaultsAndNormalizesIdentity()
         {
             var success = StartupCheckOptions.TryParse(
                 new[]
@@ -15,7 +15,11 @@ namespace POSCAM.UpdateClient.Tests.Models
                     "--app",
                     "PcCam.exe",
                     "--install-dir",
-                    @"C:\POSCAM\PCCAM"
+                    @"C:\POSCAM\PCCAM",
+                    "--product-code",
+                    "pccam",
+                    "--architecture",
+                    "X86"
                 },
                 out var options);
 
@@ -40,9 +44,9 @@ namespace POSCAM.UpdateClient.Tests.Models
                 {
                     "startup-check",
                     "--app",
-                    "PcCam.exe",
+                    "CamViewerClient.exe",
                     "--install-dir",
-                    @"C:\POSCAM\PCCAM",
+                    @"C:\POSCAM\CamViewer",
                     "--base-url",
                     "http://localhost:5000",
                     "--product-code",
@@ -68,6 +72,69 @@ namespace POSCAM.UpdateClient.Tests.Models
         }
 
         [Theory]
+        [InlineData(true, false)]
+        [InlineData(false, true)]
+        public void TryParse_MissingProductOrArchitecture_ReturnsFalse(
+            bool omitProductCode,
+            bool omitArchitecture)
+        {
+            var args = new System.Collections.Generic.List<string>
+            {
+                "startup-check",
+                "--app",
+                "PcCam.exe",
+                "--install-dir",
+                @"C:\POSCAM\PCCAM"
+            };
+
+            if (!omitProductCode)
+            {
+                args.Add("--product-code");
+                args.Add("PCCAM");
+            }
+
+            if (!omitArchitecture)
+            {
+                args.Add("--architecture");
+                args.Add("x86");
+            }
+
+            var success = StartupCheckOptions.TryParse(
+                args.ToArray(),
+                out var options);
+
+            Assert.False(success);
+            Assert.Null(options);
+        }
+
+        [Theory]
+        [InlineData("UNKNOWN", "x86")]
+        [InlineData("PCCAM", "any")]
+        [InlineData("PCCAM", "arm64")]
+        public void TryParse_UnsupportedIdentity_ReturnsFalse(
+            string productCode,
+            string architecture)
+        {
+            var success = StartupCheckOptions.TryParse(
+                new[]
+                {
+                    "startup-check",
+                    "--app",
+                    "PcCam.exe",
+                    "--install-dir",
+                    @"C:\POSCAM\PCCAM",
+                    "--product-code",
+                    productCode,
+                    "--architecture",
+                    architecture
+                },
+                out var options);
+
+            Assert.False(success);
+            Assert.Null(options);
+        }
+
+        [Theory]
         [InlineData("--unknown")]
         [InlineData("--app")]
         [InlineData("--install-dir")]
@@ -85,6 +152,10 @@ namespace POSCAM.UpdateClient.Tests.Models
                     "PcCam.exe",
                     "--install-dir",
                     @"C:\POSCAM\PCCAM",
+                    "--product-code",
+                    "PCCAM",
+                    "--architecture",
+                    "x86",
                     "--unknown",
                     "value"
                 };
@@ -119,7 +190,11 @@ namespace POSCAM.UpdateClient.Tests.Models
                     "--app",
                     "Other.exe",
                     "--install-dir",
-                    @"C:\POSCAM\PCCAM"
+                    @"C:\POSCAM\PCCAM",
+                    "--product-code",
+                    "PCCAM",
+                    "--architecture",
+                    "x86"
                 },
                 out var options);
 
