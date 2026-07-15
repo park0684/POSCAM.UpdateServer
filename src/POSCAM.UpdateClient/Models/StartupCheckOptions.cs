@@ -9,18 +9,16 @@ namespace POSCAM.UpdateClient.Models
     internal sealed class StartupCheckOptions
     {
         public const string DefaultBaseUrl = "https://update.poscam.co.kr";
-        public const string DefaultProductCode = "PCCAM";
         public const string DefaultOperatingSystem = "windows";
-        public const string DefaultArchitecture = "x86";
         public const string DefaultChannel = "stable";
 
         public string BaseUrl { get; set; } = DefaultBaseUrl;
 
-        public string ProductCode { get; set; } = DefaultProductCode;
+        public string ProductCode { get; set; } = "";
 
         public string OperatingSystem { get; set; } = DefaultOperatingSystem;
 
-        public string Architecture { get; set; } = DefaultArchitecture;
+        public string Architecture { get; set; } = "";
 
         public string Channel { get; set; } = DefaultChannel;
 
@@ -36,7 +34,7 @@ namespace POSCAM.UpdateClient.Models
         {
             options = null;
 
-            if (args == null || args.Length < 2)
+            if (args == null || args.Length < 9)
             {
                 return false;
             }
@@ -79,7 +77,18 @@ namespace POSCAM.UpdateClient.Models
                     out var installDirectory)
                 || !values.TryGetValue(
                     "--app",
-                    out var applicationFileName))
+                    out var applicationFileName)
+                || !values.TryGetValue(
+                    "--product-code",
+                    out var productCode)
+                || !values.TryGetValue(
+                    "--architecture",
+                    out var architecture)
+                || !UpdateProductIdentity.TryNormalize(
+                    productCode,
+                    architecture,
+                    out var normalizedProductCode,
+                    out var normalizedArchitecture))
             {
                 return false;
             }
@@ -87,7 +96,9 @@ namespace POSCAM.UpdateClient.Models
             var parsed = new StartupCheckOptions
             {
                 InstallDirectory = installDirectory,
-                ApplicationFileName = applicationFileName
+                ApplicationFileName = applicationFileName,
+                ProductCode = normalizedProductCode,
+                Architecture = normalizedArchitecture
             };
 
             if (values.TryGetValue("--base-url", out var baseUrl))
@@ -95,19 +106,9 @@ namespace POSCAM.UpdateClient.Models
                 parsed.BaseUrl = baseUrl;
             }
 
-            if (values.TryGetValue("--product-code", out var productCode))
-            {
-                parsed.ProductCode = productCode;
-            }
-
             if (values.TryGetValue("--os", out var operatingSystem))
             {
                 parsed.OperatingSystem = operatingSystem;
-            }
-
-            if (values.TryGetValue("--architecture", out var architecture))
-            {
-                parsed.Architecture = architecture;
             }
 
             if (values.TryGetValue("--channel", out var channel))
@@ -116,8 +117,8 @@ namespace POSCAM.UpdateClient.Models
             }
 
             if (values.TryGetValue(
-                    "--current-version",
-                    out var currentVersion))
+                "--current-version",
+                out var currentVersion))
             {
                 parsed.CurrentVersionOverride = currentVersion;
             }
