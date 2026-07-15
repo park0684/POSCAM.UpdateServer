@@ -53,7 +53,7 @@ namespace POSCAM.UpdateClient.Tests.Services
         }
 
         [Fact]
-        public async Task ApplyAsync_ParentTimeout_ReturnsApplyFailedWithoutChanges()
+        public async Task ApplyAsync_ParentTimeout_RestartsPreviousAppWithoutChanges()
         {
             var original = Encoding.UTF8.GetBytes("old app");
             var appPath = Path.Combine(_installDirectory, "PcCam.exe");
@@ -71,7 +71,7 @@ namespace POSCAM.UpdateClient.Tests.Services
 
             Assert.Equal(UpdateClientExitCodes.ApplyFailed, exitCode);
             Assert.Equal(original, File.ReadAllBytes(appPath));
-            Assert.Equal(0, restart.CallCount);
+            Assert.Equal(1, restart.CallCount);
             Assert.True(File.Exists(planPath));
         }
 
@@ -87,8 +87,8 @@ namespace POSCAM.UpdateClient.Tests.Services
             var exitCode = await CreateService(
                 new FakeProcessWaitService(),
                 restart).ApplyAsync(
-                    CreateOptions(planPath),
-                    CancellationToken.None);
+                CreateOptions(planPath),
+                CancellationToken.None);
 
             Assert.Equal(UpdateClientExitCodes.ApplyFailed, exitCode);
             Assert.Equal(0, restart.CallCount);
@@ -111,8 +111,8 @@ namespace POSCAM.UpdateClient.Tests.Services
             var exitCode = await CreateService(
                 new FakeProcessWaitService(),
                 restart).ApplyAsync(
-                    options,
-                    CancellationToken.None);
+                options,
+                CancellationToken.None);
 
             Assert.Equal(UpdateClientExitCodes.ApplyFailed, exitCode);
             Assert.Equal(0, restart.CallCount);
@@ -120,7 +120,7 @@ namespace POSCAM.UpdateClient.Tests.Services
         }
 
         [Fact]
-        public async Task ApplyAsync_RestartFailure_RollsBackAndKeepsPlan()
+        public async Task ApplyAsync_RestartFailure_RollsBackAndRestartsPreviousVersion()
         {
             var original = Encoding.UTF8.GetBytes("old app");
             var appPath = Path.Combine(_installDirectory, "PcCam.exe");
@@ -128,16 +128,19 @@ namespace POSCAM.UpdateClient.Tests.Services
             var planPath = SavePlan(Encoding.UTF8.GetBytes("new app"));
             var restart = new FakeApplicationRestartService
             {
-                ExceptionToThrow = new IOException("restart failed")
+                ExceptionFactory = callCount => callCount == 1
+                    ? new IOException("restart failed")
+                    : null
             };
 
             var exitCode = await CreateService(
                 new FakeProcessWaitService(),
                 restart).ApplyAsync(
-                    CreateOptions(planPath),
-                    CancellationToken.None);
+                CreateOptions(planPath),
+                CancellationToken.None);
 
             Assert.Equal(UpdateClientExitCodes.ApplyFailed, exitCode);
+            Assert.Equal(2, restart.CallCount);
             Assert.Equal(original, File.ReadAllBytes(appPath));
             Assert.True(File.Exists(planPath));
         }
