@@ -49,12 +49,19 @@ namespace POSCAM.UpdateClient.Services
         {
             try
             {
-                if (string.IsNullOrWhiteSpace(planPath))
+                if (planPath == null)
                 {
                     return null;
                 }
 
-                var fullPlanPath = Path.GetFullPath(planPath.Trim());
+                var normalizedPlanPath = planPath.Trim();
+
+                if (normalizedPlanPath.Length == 0)
+                {
+                    return null;
+                }
+
+                var fullPlanPath = Path.GetFullPath(normalizedPlanPath);
                 var stateDirectory = Directory.GetParent(fullPlanPath);
                 var updateDirectory = stateDirectory?.Parent;
                 var installDirectory = updateDirectory?.Parent;
@@ -111,14 +118,21 @@ namespace POSCAM.UpdateClient.Services
         {
             try
             {
-                if (string.IsNullOrWhiteSpace(installDirectory))
+                if (installDirectory == null)
+                {
+                    return;
+                }
+
+                var normalizedInstallDirectory = installDirectory.Trim();
+
+                if (normalizedInstallDirectory.Length == 0)
                 {
                     return;
                 }
 
                 var utcNow = DateTime.UtcNow;
                 var logPath = GetLogPath(
-                    installDirectory,
+                    normalizedInstallDirectory,
                     utcNow);
                 var logDirectory = Path.GetDirectoryName(logPath);
 
@@ -156,12 +170,19 @@ namespace POSCAM.UpdateClient.Services
 
         private static string Sanitize(string? value)
         {
-            if (string.IsNullOrWhiteSpace(value))
+            if (value == null)
             {
                 return "-";
             }
 
-            return value
+            var normalized = value.Trim();
+
+            if (normalized.Length == 0)
+            {
+                return "-";
+            }
+
+            return normalized
                 .Replace('\r', ' ')
                 .Replace('\n', ' ')
                 .Replace('\t', ' ')
