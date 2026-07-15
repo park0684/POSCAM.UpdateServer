@@ -13,7 +13,7 @@
 | B08 | 게시·감사 | Completed | Release 성공, 경고 0 | 257/257 성공 | Publish·Disable·Quarantine·Audit API, Storage 재검증·격리, tests, B08 보고서 | 사용자 로컬 검증 완료 |
 | B09 | 운영 기능 | Completed | Release 성공, 경고 0 | 293/293 성공 | Rate Limit, 제한 CORS, live·ready, Forwarded Headers, Request 로그, Dockerfile, tests | 사용자 로컬 검증 완료 |
 | B10 | 최종 검증 | Completed | Release 성공, 경고 0 | 294/294 성공 | ZIP 디렉터리 Entry 검증, deploy Secret ignore, B10 보고서 | Docker build 성공, 실행 사용자 app 확인 |
-| B11 | Manifest 파일별 복구 업데이트 | Completed | Release 성공, 경고 0 | 312/312 성공 | B11 문서, 완료 보고서, schema/migration, UpdateArtifactFile Entity/Repository/DI, ArtifactFileManifestService, ArtifactUploadService manifest 연결, UpdateCheck files[] 연결, Repository/Storage/Upload/UpdateCheck tests | 서버 구현 완료, 운영 DB migration 및 클라이언트 files[] 복구 구현 필요 |
-| B12 | 클라이언트 Manifest 파일 복구 업데이트 | InProgress | 재검증 필요 | 재검증 필요 | docs/client-manifest-repair-update-policy.md, codex/prompts/B12_IMPLEMENT_CLIENT_MANIFEST_REPAIR_UPDATE.md, POSCAM.UpdateClient net48 x86 WinExe skeleton, startup-check/apply 명령, exit code, WORK_STATUS | PcCam 호출형 무인 UpdateClient 정책 반영, UI/트레이/콘솔 없음, 실제 복구 로직 전 |
+| B11 | Manifest 파일별 복구 업데이트 | Completed | Release 성공, 경고 0 | 312/312 성공 | B11 문서, 완료 보고서, schema/migration, UpdateArtifactFile Entity/Repository/DI, ArtifactFileManifestService, ArtifactUploadService manifest 연결, UpdateCheck files[] 연결, Repository/Storage/Upload/UpdateCheck tests | 서버 구현 완료, 운영 DB migration은 배포 전 수동 적용 필요 |
+| B12 | 클라이언트 Manifest 파일 복구 업데이트 | Completed | Release 성공, 경고 0 | 450/450 성공 | POSCAM.UpdateClient net48 x86 WinExe, startup-check/apply/apply-worker, files[] 검사, 다운로드·검증, FileRepair/FullPackage 적용·rollback, worker self-update, 제품·아키텍처 식별, 운영 로그, B12 완료 보고서 | 사용자 로컬 검증 완료, PcCam x86·x64 및 CamViewer 저장소 연동은 후속 작업 |
 
 상태값: `Pending`, `InProgress`, `Completed`, `Blocked`
