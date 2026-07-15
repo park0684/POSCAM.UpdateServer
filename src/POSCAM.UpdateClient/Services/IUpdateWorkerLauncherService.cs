@@ -6,6 +6,8 @@ namespace POSCAM.UpdateClient.Services
             string installDirectory,
             string jobId,
             string planPath,
+            string productCode,
+            string architecture,
             string restartFileName,
             int waitTimeoutSeconds,
             int parentProcessId);
