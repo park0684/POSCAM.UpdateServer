@@ -56,6 +56,8 @@ namespace POSCAM.UpdateClient.Tests.Services
                 _installDirectory,
                 JobId,
                 planPath,
+                "PCCAM",
+                "x86",
                 "PcCam.exe",
                 90,
                 2468);
@@ -76,6 +78,8 @@ namespace POSCAM.UpdateClient.Tests.Services
             Assert.True(startInfo.CreateNoWindow);
             Assert.Contains("apply-worker", startInfo.Arguments);
             Assert.Contains("--wait-process-id 2468", startInfo.Arguments);
+            Assert.Contains("--product-code \"PCCAM\"", startInfo.Arguments);
+            Assert.Contains("--architecture \"x86\"", startInfo.Arguments);
             Assert.Contains("--wait-timeout-seconds 90", startInfo.Arguments);
             Assert.Contains("\"" + planPath + "\"", startInfo.Arguments);
             Assert.Contains("--restart \"PcCam.exe\"", startInfo.Arguments);
@@ -103,6 +107,8 @@ namespace POSCAM.UpdateClient.Tests.Services
                 _installDirectory,
                 JobId,
                 _pathService.GetActivePlanPath(_installDirectory),
+                "PCCAM",
+                "x86",
                 "PcCam.exe",
                 60,
                 1234));
@@ -124,6 +130,8 @@ namespace POSCAM.UpdateClient.Tests.Services
                 _installDirectory,
                 JobId,
                 _pathService.GetActivePlanPath(_installDirectory),
+                "PCCAM",
+                "x86",
                 "PcCam.exe",
                 60,
                 1234));
@@ -150,9 +158,34 @@ namespace POSCAM.UpdateClient.Tests.Services
                     _installDirectory,
                     JobId,
                     _pathService.GetActivePlanPath(_installDirectory),
+                    "PCCAM",
+                    "x86",
                     "PcCam.exe",
                     timeoutSeconds,
                     parentProcessId));
+        }
+
+        [Theory]
+        [InlineData("UNKNOWN", "x86")]
+        [InlineData("PCCAM", "any")]
+        public void Launch_InvalidIdentity_IsRejected(
+            string productCode,
+            string architecture)
+        {
+            var called = false;
+            var service = CreateService(_ => called = true);
+
+            Assert.Throws<ArgumentException>(() => service.Launch(
+                _installDirectory,
+                JobId,
+                _pathService.GetActivePlanPath(_installDirectory),
+                productCode,
+                architecture,
+                "PcCam.exe",
+                60,
+                1234));
+
+            Assert.False(called);
         }
 
         private UpdateWorkerLauncherService CreateService(
