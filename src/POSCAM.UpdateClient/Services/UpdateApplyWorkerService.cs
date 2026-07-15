@@ -45,10 +45,13 @@ namespace POSCAM.UpdateClient.Services
                 throw new ArgumentNullException(nameof(options));
             }
 
+            UpdateApplyPlan? plan = null;
+            string? planPath = null;
+
             try
             {
-                var planPath = Path.GetFullPath(options.PlanPath.Trim());
-                var plan = _planStore.Load(planPath);
+                planPath = Path.GetFullPath(options.PlanPath.Trim());
+                plan = _planStore.Load(planPath);
                 ValidatePlan(planPath, plan, options);
 
                 var exited = await _processWaitService.WaitForExitAsync(
@@ -59,6 +62,9 @@ namespace POSCAM.UpdateClient.Services
 
                 if (!exited)
                 {
+                    RestartAfterPrechangeFailure(
+                        plan,
+                        "원본 UpdateClient 종료를 확인하지 못했습니다.");
                     return UpdateClientExitCodes.ApplyFailed;
                 }
 
@@ -78,15 +84,58 @@ namespace POSCAM.UpdateClient.Services
                 throw;
             }
             catch (Exception exception)
-                when (exception is ArgumentException
-                    || exception is InvalidDataException
-                    || exception is IOException
-                    || exception is UnauthorizedAccessException
-                    || exception is NotSupportedException
-                    || exception is System.ComponentModel.Win32Exception)
+                when (IsHandledApplyException(exception))
             {
+                UpdateClientLog.Error(
+                    plan?.InstallDirectory
+                        ?? UpdateClientLog.TryResolveInstallDirectoryFromPlanPath(
+                            planPath ?? options.PlanPath),
+                    "apply-worker.failed",
+                    "Full Package worker 적용을 완료하지 못했습니다. 적용 계획은 유지됩니다.",
+                    exception);
                 return UpdateClientExitCodes.ApplyFailed;
             }
+        }
+
+        private void RestartAfterPrechangeFailure(
+            UpdateApplyPlan plan,
+            string failureMessage)
+        {
+            try
+            {
+                _restartService.Restart(
+                    plan.InstallDirectory,
+                    plan.ApplicationFileName);
+
+                UpdateClientLog.Info(
+                    plan.InstallDirectory,
+                    "apply-worker.prechange.restart.success",
+                    failureMessage
+                        + " 파일을 변경하지 않고 기존 프로그램을 다시 실행했습니다.");
+            }
+            catch (Exception restartException)
+            {
+                UpdateClientLog.Error(
+                    plan.InstallDirectory,
+                    "apply-worker.prechange.restart.failed",
+                    failureMessage
+                        + " 파일 변경은 없지만 기존 프로그램도 다시 실행하지 못했습니다.",
+                    restartException);
+
+                throw new IOException(
+                    "Full Package worker 준비 실패 후 기존 프로그램을 다시 실행하지 못했습니다.",
+                    restartException);
+            }
+        }
+
+        private static bool IsHandledApplyException(Exception exception)
+        {
+            return exception is ArgumentException
+                || exception is InvalidDataException
+                || exception is IOException
+                || exception is UnauthorizedAccessException
+                || exception is NotSupportedException
+                || exception is System.ComponentModel.Win32Exception;
         }
 
         private void ValidatePlan(
