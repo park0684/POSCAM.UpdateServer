@@ -8,6 +8,8 @@ namespace POSCAM.UpdateClient.Tests.TestDoubles
     {
         public Exception? ExceptionToThrow { get; set; }
 
+        public Func<int, Exception?>? ExceptionFactory { get; set; }
+
         public int CallCount { get; private set; }
 
         public string LastInstallDirectory { get; private set; } = "";
@@ -21,6 +23,13 @@ namespace POSCAM.UpdateClient.Tests.TestDoubles
             CallCount++;
             LastInstallDirectory = installDirectory;
             LastApplicationFileName = applicationFileName;
+
+            var generatedException = ExceptionFactory?.Invoke(CallCount);
+
+            if (generatedException != null)
+            {
+                throw generatedException;
+            }
 
             if (ExceptionToThrow != null)
             {
