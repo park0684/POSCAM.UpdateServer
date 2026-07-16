@@ -4,6 +4,9 @@ on:
   push:
     branches:
       - agent/incremental-file-update
+  pull_request:
+    branches:
+      - feature/initial-update-server
   workflow_dispatch:
 
 permissions:
