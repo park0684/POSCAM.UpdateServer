@@ -52,8 +52,21 @@ namespace POSCAM.UpdateClient.Services
                     "설치 경로가 비어 있습니다.");
             }
 
-            var installedManifest = _installedManifestStore.Load(
-                options.InstallDirectory);
+            InstalledManifest? installedManifest = null;
+
+            try
+            {
+                installedManifest = _installedManifestStore.Load(
+                    options.InstallDirectory);
+            }
+            catch (Exception exception)
+                when (exception is InvalidDataException
+                    || exception is IOException
+                    || exception is UnauthorizedAccessException)
+            {
+                // 설치 Manifest가 손상되거나 읽을 수 없으면 EXE 버전으로 확인한다.
+                // 이후 Update Check 단계에서 Full Package 복구 경로를 선택한다.
+            }
 
             if (installedManifest != null)
             {
@@ -77,11 +90,12 @@ namespace POSCAM.UpdateClient.Services
                         StringComparison.Ordinal)
                     || string.IsNullOrWhiteSpace(installedManifest.Version))
                 {
-                    throw new InvalidDataException(
-                        "설치 Manifest의 제품, 아키텍처 또는 버전 정보가 현재 프로그램과 일치하지 않습니다.");
+                    installedManifest = null;
                 }
-
-                return installedManifest.Version.Trim();
+                else
+                {
+                    return installedManifest.Version.Trim();
+                }
             }
 
             if (string.IsNullOrWhiteSpace(options.ApplicationFileName))
