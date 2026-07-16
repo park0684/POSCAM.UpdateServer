@@ -9,7 +9,7 @@ namespace POSCAM.UpdateClient.Services
 {
     /// <summary>
     /// worker 경로에서 실행되어 Full Package staging 파일을 설치 경로에 적용한다.
-    /// 기존 파일은 작업별 백업 경로에 보관하고 실패 시 역순으로 복구한다.
+    /// 기존 파일과 설치 상태는 실패 시 역순으로 복구한다.
     /// </summary>
     internal sealed class FullPackageApplyService
     {
@@ -31,9 +31,34 @@ namespace POSCAM.UpdateClient.Services
             Action restartAction,
             CancellationToken cancellationToken)
         {
+            ApplyAndRestart(
+                plan,
+                () => { },
+                () => { },
+                restartAction,
+                cancellationToken);
+        }
+
+        public void ApplyAndRestart(
+            UpdateApplyPlan plan,
+            Action commitStateAction,
+            Action rollbackStateAction,
+            Action restartAction,
+            CancellationToken cancellationToken)
+        {
             if (plan == null)
             {
                 throw new ArgumentNullException(nameof(plan));
+            }
+
+            if (commitStateAction == null)
+            {
+                throw new ArgumentNullException(nameof(commitStateAction));
+            }
+
+            if (rollbackStateAction == null)
+            {
+                throw new ArgumentNullException(nameof(rollbackStateAction));
             }
 
             if (restartAction == null)
@@ -54,6 +79,7 @@ namespace POSCAM.UpdateClient.Services
                 }
 
                 cancellationToken.ThrowIfCancellationRequested();
+                commitStateAction();
                 restartAction();
             }
             catch (Exception applyException)
@@ -61,6 +87,7 @@ namespace POSCAM.UpdateClient.Services
                 RecoverPreviousApplication(
                     plan.InstallDirectory,
                     applied,
+                    rollbackStateAction,
                     restartAction,
                     applyException);
                 throw;
@@ -258,6 +285,7 @@ namespace POSCAM.UpdateClient.Services
         private void RecoverPreviousApplication(
             string installDirectory,
             IList<ApplyOperation> applied,
+            Action rollbackStateAction,
             Action restartAction,
             Exception applyException)
         {
@@ -266,6 +294,7 @@ namespace POSCAM.UpdateClient.Services
             try
             {
                 RollbackAndVerify(applied);
+                rollbackStateAction();
 
                 UpdateClientLog.Info(
                     installDirectory,
@@ -273,7 +302,7 @@ namespace POSCAM.UpdateClient.Services
                         ? "apply.rollback.verified"
                         : "apply.prechange.verified",
                     hadAppliedChanges
-                        ? "Full Package 적용 실패 후 기존 파일 복원과 무결성 검증을 완료했습니다."
+                        ? "Full Package 적용 실패 후 기존 파일과 설치 상태 복원을 완료했습니다."
                         : "파일 변경 전에 Full Package 적용이 실패하여 기존 설치 상태를 확인했습니다.");
             }
             catch (Exception rollbackException)
@@ -281,11 +310,11 @@ namespace POSCAM.UpdateClient.Services
                 UpdateClientLog.Error(
                     installDirectory,
                     "apply.rollback.failed",
-                    "Full Package 적용 실패 후 기존 파일 복원 또는 무결성 검증에 실패했습니다.",
+                    "Full Package 적용 실패 후 기존 파일 또는 설치 상태 복원에 실패했습니다.",
                     rollbackException);
 
                 throw new IOException(
-                    "Full Package 적용 실패 후 기존 파일 복원 또는 무결성 검증도 완료하지 못했습니다.",
+                    "Full Package 적용 실패 후 기존 파일 또는 설치 상태 복원도 완료하지 못했습니다.",
                     new AggregateException(
                         applyException,
                         rollbackException));
