@@ -33,3 +33,48 @@ jobs:
 
       - name: Test
         run: dotnet test POSCAM.UpdateServer.sln -c Release --no-build
+
+      - name: Verify UpdateClient x86 output
+        shell: pwsh
+        run: |
+          $outputDirectory = Join-Path $env:GITHUB_WORKSPACE "src\POSCAM.UpdateClient\bin\Release\net48"
+          $executable = Join-Path $outputDirectory "POSCAM.UpdateClient.exe"
+          $jsonLibrary = Join-Path $outputDirectory "Newtonsoft.Json.dll"
+
+          if (-not (Test-Path $executable)) {
+            throw "POSCAM.UpdateClient.exe Release output was not created."
+          }
+
+          if (-not (Test-Path $jsonLibrary)) {
+            throw "Newtonsoft.Json.dll was not copied to the UpdateClient output."
+          }
+
+          Write-Host "Verified UpdateClient output: $outputDirectory"
+
+      - name: Create UpdateClient package
+        shell: pwsh
+        run: |
+          $source = Join-Path $env:GITHUB_WORKSPACE "src\POSCAM.UpdateClient\bin\Release\net48"
+          $package = Join-Path $env:GITHUB_WORKSPACE "artifacts\POSCAM.UpdateClient-x86"
+
+          New-Item -ItemType Directory -Path $package -Force | Out-Null
+
+          Get-ChildItem -Path $source -File | ForEach-Object {
+            Copy-Item -Path $_.FullName -Destination $package -Force
+          }
+
+          @(
+            "ProductCode=PCCAM/CAMVIEWER/UPDATER runtime client",
+            "Architecture=x86",
+            "TargetFramework=net48",
+            "SourceBranch=${{ github.head_ref || github.ref_name }}",
+            "SourceCommit=${{ github.sha }}"
+          ) | Set-Content -Path (Join-Path $package "build-info.txt") -Encoding UTF8
+
+      - name: Upload UpdateClient x86 package
+        uses: actions/upload-artifact@v4
+        with:
+          name: POSCAM.UpdateClient-x86
+          path: artifacts/POSCAM.UpdateClient-x86
+          if-no-files-found: error
+          retention-days: 14
