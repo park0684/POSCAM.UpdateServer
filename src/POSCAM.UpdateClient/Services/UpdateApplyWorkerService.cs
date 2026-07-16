@@ -92,15 +92,24 @@ namespace POSCAM.UpdateClient.Services
                 }
 
                 recoveryHandled = true;
+                var previousManifest = _installedManifestStore.Load(
+                    plan.InstallDirectory);
+                var previousFallbackRequested = _installedManifestStore
+                    .IsFullPackageFallbackRequested(
+                        plan.InstallDirectory);
+
                 _fullPackageApplyService.ApplyAndRestart(
                     plan,
+                    () => CommitAppliedState(plan),
+                    () => RestoreAppliedState(
+                        plan.InstallDirectory,
+                        previousManifest,
+                        previousFallbackRequested),
                     () => _restartService.Restart(
                         plan.InstallDirectory,
                         plan.ApplicationFileName),
                     cancellationToken);
 
-                PersistAppliedManifest(plan);
-                TryClearFullPackageFallback(plan.InstallDirectory);
                 _planStore.Delete(planPath);
                 return UpdateClientExitCodes.Success;
             }
@@ -133,32 +142,45 @@ namespace POSCAM.UpdateClient.Services
             }
         }
 
-        private void PersistAppliedManifest(UpdateApplyPlan plan)
+        private void CommitAppliedState(UpdateApplyPlan plan)
         {
-            if (plan.TargetManifest == null)
+            if (plan.TargetManifest != null)
             {
-                return;
+                _installedManifestStore.Save(
+                    plan.InstallDirectory,
+                    plan.TargetManifest);
             }
 
-            _installedManifestStore.Save(
-                plan.InstallDirectory,
-                plan.TargetManifest);
+            _installedManifestStore.ClearFullPackageFallback(
+                plan.InstallDirectory);
         }
 
-        private void TryClearFullPackageFallback(string installDirectory)
+        private void RestoreAppliedState(
+            string installDirectory,
+            InstalledManifest? previousManifest,
+            bool previousFallbackRequested)
         {
-            try
+            if (previousManifest == null)
+            {
+                _installedManifestStore.Delete(installDirectory);
+            }
+            else
+            {
+                _installedManifestStore.Save(
+                    installDirectory,
+                    previousManifest);
+            }
+
+            if (previousFallbackRequested)
+            {
+                _installedManifestStore.RequestFullPackageFallback(
+                    installDirectory,
+                    "RollbackRestore");
+            }
+            else
             {
                 _installedManifestStore.ClearFullPackageFallback(
                     installDirectory);
-            }
-            catch (Exception exception)
-            {
-                UpdateClientLog.Error(
-                    installDirectory,
-                    "apply-worker.fallback-clear-failed",
-                    "Full Package 성공 후 전환 상태를 정리하지 못했습니다.",
-                    exception);
             }
         }
 
