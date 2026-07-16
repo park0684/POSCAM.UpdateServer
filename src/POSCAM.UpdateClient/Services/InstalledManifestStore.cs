@@ -1,4 +1,5 @@
 using System;
+using System.Collections.Generic;
 using System.IO;
 using System.Text;
 using Newtonsoft.Json;
@@ -27,18 +28,7 @@ namespace POSCAM.UpdateClient.Services
             {
                 var json = File.ReadAllText(path, Encoding.UTF8);
                 var manifest = JsonConvert.DeserializeObject<InstalledManifest>(json);
-
-                if (manifest == null
-                    || manifest.ManifestVersion != 1
-                    || string.IsNullOrWhiteSpace(manifest.ProductCode)
-                    || string.IsNullOrWhiteSpace(manifest.Architecture)
-                    || string.IsNullOrWhiteSpace(manifest.Version)
-                    || manifest.Files == null)
-                {
-                    return null;
-                }
-
-                return manifest;
+                return IsValidManifest(manifest) ? manifest : null;
             }
             catch (JsonException)
             {
@@ -55,11 +45,7 @@ namespace POSCAM.UpdateClient.Services
                 throw new ArgumentNullException(nameof(manifest));
             }
 
-            if (manifest.ManifestVersion != 1
-                || string.IsNullOrWhiteSpace(manifest.ProductCode)
-                || string.IsNullOrWhiteSpace(manifest.Architecture)
-                || string.IsNullOrWhiteSpace(manifest.Version)
-                || manifest.Files == null)
+            if (!IsValidManifest(manifest))
             {
                 throw new InvalidDataException(
                     "저장할 설치 Manifest가 올바르지 않습니다.");
@@ -124,6 +110,116 @@ namespace POSCAM.UpdateClient.Services
             return Path.Combine(
                 GetStateDirectory(installDirectory),
                 FullPackageFallbackFileName);
+        }
+
+        private static bool IsValidManifest(InstalledManifest? manifest)
+        {
+            if (manifest == null
+                || manifest.ManifestVersion != 1
+                || string.IsNullOrWhiteSpace(manifest.ProductCode)
+                || string.IsNullOrWhiteSpace(manifest.Architecture)
+                || string.IsNullOrWhiteSpace(manifest.Version)
+                || manifest.Files == null
+                || manifest.Files.Count == 0)
+            {
+                return false;
+            }
+
+            var paths = new HashSet<string>(
+                StringComparer.OrdinalIgnoreCase);
+
+            foreach (var file in manifest.Files)
+            {
+                if (file == null
+                    || file.Size < 0
+                    || !IsSafeRelativePath(file.Path)
+                    || !IsValidSha256(file.Sha256))
+                {
+                    return false;
+                }
+
+                var normalizedPath = file.Path
+                    .Trim()
+                    .Replace('\\', '/');
+                if (!paths.Add(normalizedPath))
+                {
+                    return false;
+                }
+            }
+
+            return true;
+        }
+
+        private static bool IsSafeRelativePath(string path)
+        {
+            if (string.IsNullOrWhiteSpace(path)
+                || path.IndexOf('\0') >= 0
+                || Path.IsPathRooted(path)
+                || path.IndexOf(':') >= 0
+                || !string.Equals(
+                    path,
+                    path.Trim(),
+                    StringComparison.Ordinal))
+            {
+                return false;
+            }
+
+            var segments = path.Split(
+                new[] { '/', '\\' },
+                StringSplitOptions.None);
+            if (segments.Length == 0)
+            {
+                return false;
+            }
+
+            foreach (var segment in segments)
+            {
+                if (string.IsNullOrWhiteSpace(segment)
+                    || segment == "."
+                    || segment == ".."
+                    || !string.Equals(
+                        segment,
+                        segment.Trim(),
+                        StringComparison.Ordinal)
+                    || segment.IndexOfAny(
+                        Path.GetInvalidFileNameChars()) >= 0)
+                {
+                    return false;
+                }
+            }
+
+            return !string.Equals(
+                segments[0],
+                "_update",
+                StringComparison.OrdinalIgnoreCase);
+        }
+
+        private static bool IsValidSha256(string value)
+        {
+            if (string.IsNullOrWhiteSpace(value))
+            {
+                return false;
+            }
+
+            var normalized = value.Trim();
+            if (normalized.Length != 64)
+            {
+                return false;
+            }
+
+            foreach (var character in normalized)
+            {
+                var isHex = character >= '0' && character <= '9'
+                    || character >= 'a' && character <= 'f'
+                    || character >= 'A' && character <= 'F';
+
+                if (!isHex)
+                {
+                    return false;
+                }
+            }
+
+            return true;
         }
 
         private static string GetStateDirectory(string installDirectory)
