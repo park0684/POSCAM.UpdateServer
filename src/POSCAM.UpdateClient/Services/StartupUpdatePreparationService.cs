@@ -15,11 +15,25 @@ namespace POSCAM.UpdateClient.Services
         private readonly IUpdateFileDownloadService _downloadService;
         private readonly UpdateWorkPathService _workPathService;
         private readonly UpdateApplyPlanStore _planStore;
+        private readonly InstalledManifestStore _installedManifestStore;
 
         public StartupUpdatePreparationService(
             IUpdateFileDownloadService downloadService,
             UpdateWorkPathService workPathService,
             UpdateApplyPlanStore planStore)
+            : this(
+                downloadService,
+                workPathService,
+                planStore,
+                new InstalledManifestStore())
+        {
+        }
+
+        internal StartupUpdatePreparationService(
+            IUpdateFileDownloadService downloadService,
+            UpdateWorkPathService workPathService,
+            UpdateApplyPlanStore planStore,
+            InstalledManifestStore installedManifestStore)
         {
             _downloadService = downloadService
                 ?? throw new ArgumentNullException(nameof(downloadService));
@@ -27,6 +41,9 @@ namespace POSCAM.UpdateClient.Services
                 ?? throw new ArgumentNullException(nameof(workPathService));
             _planStore = planStore
                 ?? throw new ArgumentNullException(nameof(planStore));
+            _installedManifestStore = installedManifestStore
+                ?? throw new ArgumentNullException(
+                    nameof(installedManifestStore));
         }
 
         public async Task<int> PrepareAsync(
@@ -80,6 +97,34 @@ namespace POSCAM.UpdateClient.Services
             if (checkResult.ExitCode
                 != UpdateClientExitCodes.ApplyRequired)
             {
+                if (checkResult.ExitCode == UpdateClientExitCodes.Success
+                    && checkResult.TargetManifest != null)
+                {
+                    try
+                    {
+                        _installedManifestStore.Save(
+                            paths.InstallDirectory,
+                            checkResult.TargetManifest);
+                        _installedManifestStore.ClearFullPackageFallback(
+                            paths.InstallDirectory);
+                    }
+                    catch (Exception exception)
+                        when (exception is ArgumentException
+                            || exception is InvalidDataException
+                            || exception is IOException
+                            || exception is UnauthorizedAccessException
+                            || exception is NotSupportedException
+                            || exception is PathTooLongException)
+                    {
+                        UpdateClientLog.Error(
+                            paths.InstallDirectory,
+                            "Preparation.ManifestSaveFailed",
+                            "설치 Manifest를 저장하지 못했습니다. ExitCode=40",
+                            exception);
+                        return UpdateClientExitCodes.DownloadFailed;
+                    }
+                }
+
                 UpdateClientLog.Info(
                     paths.InstallDirectory,
                     "Preparation.Skipped",
@@ -112,7 +157,8 @@ namespace POSCAM.UpdateClient.Services
                     InstallDirectory = paths.InstallDirectory,
                     ApplicationFileName = applicationFileName,
                     CreatedAtUtc = DateTime.UtcNow,
-                    LatestVersion = checkResult.UpdateResponse?.LatestVersion
+                    LatestVersion = checkResult.UpdateResponse?.LatestVersion,
+                    TargetManifest = checkResult.TargetManifest
                 };
 
                 if (checkResult.FullPackageUpdateRequired)
@@ -126,12 +172,36 @@ namespace POSCAM.UpdateClient.Services
                 }
                 else
                 {
-                    await PrepareFileRepairAsync(
-                        paths,
-                        checkResult,
-                        plan,
-                        cancellationToken)
-                        .ConfigureAwait(false);
+                    try
+                    {
+                        await PrepareFileTargetsAsync(
+                            paths,
+                            checkResult,
+                            plan,
+                            cancellationToken)
+                            .ConfigureAwait(false);
+                    }
+                    catch (Exception exception)
+                        when (checkResult.IncrementalUpdateRequired
+                            && IsIncrementalFallbackException(exception))
+                    {
+                        UpdateClientLog.Error(
+                            paths.InstallDirectory,
+                            "Preparation.IncrementalFallback",
+                            "증분 업데이트 준비에 실패하여 Full Package 다운로드로 전환합니다.",
+                            exception);
+
+                        ResetJobDirectory(paths);
+                        plan.Targets.Clear();
+                        plan.Mode = "";
+
+                        await PrepareFullPackageAsync(
+                            paths,
+                            checkResult,
+                            plan,
+                            cancellationToken)
+                            .ConfigureAwait(false);
+                    }
                 }
 
                 _planStore.Save(paths.ActivePlanPath, plan);
@@ -268,7 +338,7 @@ namespace POSCAM.UpdateClient.Services
                     + " Size=" + fileSize.Value);
         }
 
-        private async Task PrepareFileRepairAsync(
+        private async Task PrepareFileTargetsAsync(
             UpdateWorkPaths paths,
             StartupCheckResult checkResult,
             UpdateApplyPlan plan,
@@ -279,19 +349,52 @@ namespace POSCAM.UpdateClient.Services
             if (repairTargets == null || repairTargets.Count == 0)
             {
                 throw new InvalidDataException(
-                    "파일 복구 대상이 없습니다.");
+                    "파일 업데이트 대상이 없습니다.");
             }
 
-            plan.Mode = UpdateApplyModes.FileRepair;
+            plan.Mode = checkResult.IncrementalUpdateRequired
+                ? UpdateApplyModes.IncrementalUpdate
+                : UpdateApplyModes.FileRepair;
 
             foreach (var target in repairTargets)
             {
                 if (target == null
-                    || string.IsNullOrWhiteSpace(target.RelativePath)
-                    || string.IsNullOrWhiteSpace(target.ExpectedSha256))
+                    || string.IsNullOrWhiteSpace(target.RelativePath))
                 {
                     throw new InvalidDataException(
-                        "파일 복구 대상 정보가 올바르지 않습니다.");
+                        "파일 업데이트 대상 정보가 올바르지 않습니다.");
+                }
+
+                var operation = string.IsNullOrWhiteSpace(target.Operation)
+                    ? UpdateTargetOperations.Replace
+                    : target.Operation.Trim();
+
+                if (string.Equals(
+                    operation,
+                    UpdateTargetOperations.Delete,
+                    StringComparison.Ordinal))
+                {
+                    plan.Targets.Add(new UpdateApplyTarget
+                    {
+                        Operation = UpdateTargetOperations.Delete,
+                        RelativePath = target.RelativePath,
+                        DownloadedPath = "",
+                        ExpectedSize = 0,
+                        ExpectedSha256 = "",
+                        Reason = target.Reason
+                    });
+                    continue;
+                }
+
+                if (!string.Equals(
+                        operation,
+                        UpdateTargetOperations.Replace,
+                        StringComparison.Ordinal)
+                    || string.IsNullOrWhiteSpace(target.ExpectedSha256)
+                    || string.IsNullOrWhiteSpace(target.DownloadUrl))
+                {
+                    throw new InvalidDataException(
+                        "파일 교체 대상 정보가 올바르지 않습니다.");
                 }
 
                 var relativeDownloadPath = "files/"
@@ -306,7 +409,8 @@ namespace POSCAM.UpdateClient.Services
                 UpdateClientLog.Info(
                     paths.InstallDirectory,
                     "Download.Begin",
-                    "Mode=FileRepair Path=" + target.RelativePath
+                    "Mode=" + plan.Mode
+                        + " Path=" + target.RelativePath
                         + " Size=" + target.ExpectedSize);
 
                 var downloadedPath = await _downloadService
@@ -323,6 +427,7 @@ namespace POSCAM.UpdateClient.Services
 
                 plan.Targets.Add(new UpdateApplyTarget
                 {
+                    Operation = UpdateTargetOperations.Replace,
                     RelativePath = target.RelativePath,
                     DownloadedPath = downloadedPath,
                     ExpectedSize = target.ExpectedSize,
@@ -333,9 +438,32 @@ namespace POSCAM.UpdateClient.Services
                 UpdateClientLog.Info(
                     paths.InstallDirectory,
                     "Download.Success",
-                    "Mode=FileRepair Path=" + target.RelativePath
+                    "Mode=" + plan.Mode
+                        + " Path=" + target.RelativePath
                         + " Size=" + target.ExpectedSize);
             }
+        }
+
+        private static bool IsIncrementalFallbackException(
+            Exception exception)
+        {
+            return exception is UpdateDownloadException
+                || exception is IOException
+                || exception is UnauthorizedAccessException
+                || exception is ArgumentException
+                || exception is InvalidDataException
+                || exception is NotSupportedException
+                || exception is PathTooLongException;
+        }
+
+        private static void ResetJobDirectory(UpdateWorkPaths paths)
+        {
+            if (Directory.Exists(paths.JobDirectory))
+            {
+                Directory.Delete(paths.JobDirectory, true);
+            }
+
+            Directory.CreateDirectory(paths.JobDirectory);
         }
 
         private void CleanupFailedJob(UpdateWorkPaths paths)
