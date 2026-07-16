@@ -16,6 +16,7 @@ namespace POSCAM.UpdateClient.Services
         private readonly IProcessWaitService _processWaitService;
         private readonly FullPackageApplyService _fullPackageApplyService;
         private readonly IApplicationRestartService _restartService;
+        private readonly InstalledManifestStore _installedManifestStore;
 
         public UpdateApplyWorkerService(
             UpdateApplyPlanStore planStore,
@@ -23,6 +24,23 @@ namespace POSCAM.UpdateClient.Services
             IProcessWaitService processWaitService,
             FullPackageApplyService fullPackageApplyService,
             IApplicationRestartService restartService)
+            : this(
+                planStore,
+                pathService,
+                processWaitService,
+                fullPackageApplyService,
+                restartService,
+                new InstalledManifestStore())
+        {
+        }
+
+        internal UpdateApplyWorkerService(
+            UpdateApplyPlanStore planStore,
+            UpdateWorkPathService pathService,
+            IProcessWaitService processWaitService,
+            FullPackageApplyService fullPackageApplyService,
+            IApplicationRestartService restartService,
+            InstalledManifestStore installedManifestStore)
         {
             _planStore = planStore
                 ?? throw new ArgumentNullException(nameof(planStore));
@@ -34,6 +52,9 @@ namespace POSCAM.UpdateClient.Services
                 ?? throw new ArgumentNullException(nameof(fullPackageApplyService));
             _restartService = restartService
                 ?? throw new ArgumentNullException(nameof(restartService));
+            _installedManifestStore = installedManifestStore
+                ?? throw new ArgumentNullException(
+                    nameof(installedManifestStore));
         }
 
         public async Task<int> ApplyAsync(
@@ -78,6 +99,8 @@ namespace POSCAM.UpdateClient.Services
                         plan.ApplicationFileName),
                     cancellationToken);
 
+                PersistAppliedManifest(plan);
+                TryClearFullPackageFallback(plan.InstallDirectory);
                 _planStore.Delete(planPath);
                 return UpdateClientExitCodes.Success;
             }
@@ -107,6 +130,35 @@ namespace POSCAM.UpdateClient.Services
                     "Full Package worker 적용을 완료하지 못했습니다. 적용 계획은 유지됩니다.",
                     exception);
                 return UpdateClientExitCodes.ApplyFailed;
+            }
+        }
+
+        private void PersistAppliedManifest(UpdateApplyPlan plan)
+        {
+            if (plan.TargetManifest == null)
+            {
+                return;
+            }
+
+            _installedManifestStore.Save(
+                plan.InstallDirectory,
+                plan.TargetManifest);
+        }
+
+        private void TryClearFullPackageFallback(string installDirectory)
+        {
+            try
+            {
+                _installedManifestStore.ClearFullPackageFallback(
+                    installDirectory);
+            }
+            catch (Exception exception)
+            {
+                UpdateClientLog.Error(
+                    installDirectory,
+                    "apply-worker.fallback-clear-failed",
+                    "Full Package 성공 후 전환 상태를 정리하지 못했습니다.",
+                    exception);
             }
         }
 
