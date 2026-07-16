@@ -36,6 +36,9 @@ namespace POSCAM.UpdateClient.Models
         [JsonProperty("latestVersion")]
         public string? LatestVersion { get; set; }
 
+        [JsonProperty("targetManifest")]
+        public InstalledManifest? TargetManifest { get; set; }
+
         [JsonProperty("packageType")]
         public string? PackageType { get; set; }
 
