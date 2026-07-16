@@ -7,8 +7,8 @@ using POSCAM.UpdateClient.Models;
 namespace POSCAM.UpdateClient.Services
 {
     /// <summary>
-    /// 적용 계획을 검증하고 대상 프로세스 종료 후 파일 복구 또는 Full Package
-    /// worker 실행을 수행한다.
+    /// 적용 계획을 검증하고 대상 프로세스 종료 후 파일 단위 업데이트 또는
+    /// Full Package worker 실행을 수행한다.
     /// </summary>
     internal sealed class UpdateApplyService
     {
@@ -20,6 +20,7 @@ namespace POSCAM.UpdateClient.Services
         private readonly IUpdateWorkerLauncherService _workerLauncherService;
         private readonly IApplicationRestartService _restartService;
         private readonly Func<int> _currentProcessIdProvider;
+        private readonly InstalledManifestStore _installedManifestStore;
 
         public UpdateApplyService(
             UpdateApplyPlanStore planStore,
@@ -30,6 +31,29 @@ namespace POSCAM.UpdateClient.Services
             IUpdateWorkerLauncherService workerLauncherService,
             IApplicationRestartService restartService,
             Func<int> currentProcessIdProvider)
+            : this(
+                planStore,
+                pathService,
+                processWaitService,
+                fileRepairApplyService,
+                fullPackageStagingService,
+                workerLauncherService,
+                restartService,
+                currentProcessIdProvider,
+                new InstalledManifestStore())
+        {
+        }
+
+        internal UpdateApplyService(
+            UpdateApplyPlanStore planStore,
+            UpdateWorkPathService pathService,
+            IProcessWaitService processWaitService,
+            FileRepairApplyService fileRepairApplyService,
+            FullPackageStagingService fullPackageStagingService,
+            IUpdateWorkerLauncherService workerLauncherService,
+            IApplicationRestartService restartService,
+            Func<int> currentProcessIdProvider,
+            InstalledManifestStore installedManifestStore)
         {
             _planStore = planStore
                 ?? throw new ArgumentNullException(nameof(planStore));
@@ -48,6 +72,9 @@ namespace POSCAM.UpdateClient.Services
             _currentProcessIdProvider = currentProcessIdProvider
                 ?? throw new ArgumentNullException(
                     nameof(currentProcessIdProvider));
+            _installedManifestStore = installedManifestStore
+                ?? throw new ArgumentNullException(
+                    nameof(installedManifestStore));
         }
 
         public async Task<int> ApplyAsync(
@@ -87,10 +114,7 @@ namespace POSCAM.UpdateClient.Services
 
                 hostExitConfirmed = true;
 
-                if (string.Equals(
-                    plan.Mode,
-                    UpdateApplyModes.FileRepair,
-                    StringComparison.Ordinal))
+                if (IsFileMode(plan.Mode))
                 {
                     recoveryHandled = true;
                     _fileRepairApplyService.ApplyAndRestart(
@@ -100,6 +124,8 @@ namespace POSCAM.UpdateClient.Services
                             plan.ApplicationFileName),
                         cancellationToken);
 
+                    PersistAppliedManifest(plan);
+                    TryClearFullPackageFallback(plan.InstallDirectory);
                     _planStore.Delete(planPath);
                     return UpdateClientExitCodes.Success;
                 }
@@ -128,6 +154,17 @@ namespace POSCAM.UpdateClient.Services
             catch (Exception exception)
                 when (IsHandledApplyException(exception))
             {
+                if (plan != null
+                    && string.Equals(
+                        plan.Mode,
+                        UpdateApplyModes.IncrementalUpdate,
+                        StringComparison.Ordinal))
+                {
+                    TryRequestFullPackageFallback(
+                        plan.InstallDirectory,
+                        exception);
+                }
+
                 if (!recoveryHandled)
                 {
                     await RestartAfterSafePrechangeFailureAsync(
@@ -184,6 +221,62 @@ namespace POSCAM.UpdateClient.Services
                     plan,
                     exception);
                 return UpdateClientExitCodes.ApplyFailed;
+            }
+        }
+
+        private void PersistAppliedManifest(UpdateApplyPlan plan)
+        {
+            if (plan.TargetManifest == null)
+            {
+                return;
+            }
+
+            _installedManifestStore.Save(
+                plan.InstallDirectory,
+                plan.TargetManifest);
+        }
+
+        private void TryRequestFullPackageFallback(
+            string installDirectory,
+            Exception applyException)
+        {
+            try
+            {
+                _installedManifestStore.RequestFullPackageFallback(
+                    installDirectory,
+                    "IncrementalApplyFailed");
+
+                UpdateClientLog.Info(
+                    installDirectory,
+                    "apply.incremental.fallback-requested",
+                    "증분 적용 실패로 다음 시작 시 Full Package 업데이트를 요청했습니다.");
+            }
+            catch (Exception markerException)
+            {
+                UpdateClientLog.Error(
+                    installDirectory,
+                    "apply.incremental.fallback-request-failed",
+                    "증분 적용 실패 후 Full Package 전환 상태를 저장하지 못했습니다.",
+                    new AggregateException(
+                        applyException,
+                        markerException));
+            }
+        }
+
+        private void TryClearFullPackageFallback(string installDirectory)
+        {
+            try
+            {
+                _installedManifestStore.ClearFullPackageFallback(
+                    installDirectory);
+            }
+            catch (Exception exception)
+            {
+                UpdateClientLog.Error(
+                    installDirectory,
+                    "apply.fallback-clear-failed",
+                    "업데이트 성공 후 Full Package 전환 상태를 정리하지 못했습니다.",
+                    exception);
             }
         }
 
@@ -319,6 +412,18 @@ namespace POSCAM.UpdateClient.Services
                 applicationFileName = "";
                 return false;
             }
+        }
+
+        private static bool IsFileMode(string mode)
+        {
+            return string.Equals(
+                    mode,
+                    UpdateApplyModes.FileRepair,
+                    StringComparison.Ordinal)
+                || string.Equals(
+                    mode,
+                    UpdateApplyModes.IncrementalUpdate,
+                    StringComparison.Ordinal);
         }
 
         private static bool IsHandledApplyException(Exception exception)
