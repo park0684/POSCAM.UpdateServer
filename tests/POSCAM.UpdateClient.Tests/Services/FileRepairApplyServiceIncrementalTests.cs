@@ -1,4 +1,5 @@
 using System;
+using System.Collections.Generic;
 using System.IO;
 using System.Text;
 using System.Threading;
@@ -66,6 +67,84 @@ namespace POSCAM.UpdateClient.Tests.Services
                     CancellationToken.None));
 
             Assert.Equal(2, restartCalls);
+            Assert.True(File.Exists(path));
+            Assert.Equal(original, File.ReadAllBytes(path));
+        }
+
+        [Fact]
+        public void ApplyAndRestart_CommitsStateBeforeRestart()
+        {
+            CreateLocalFile(
+                "providers/OldProvider.dll",
+                Encoding.UTF8.GetBytes("old provider"));
+            var events = new List<string>();
+            var state = "old";
+
+            _service.ApplyAndRestart(
+                CreateDeletePlan("providers/OldProvider.dll"),
+                () =>
+                {
+                    state = "new";
+                    events.Add("commit");
+                },
+                () =>
+                {
+                    state = "old";
+                    events.Add("rollback");
+                },
+                () => events.Add("restart:" + state),
+                CancellationToken.None);
+
+            Assert.Equal(
+                new[] { "commit", "restart:new" },
+                events);
+        }
+
+        [Fact]
+        public void ApplyAndRestart_RestartFails_RollsBackStateBeforeRecoveryRestart()
+        {
+            var original = Encoding.UTF8.GetBytes("old provider");
+            var path = CreateLocalFile(
+                "providers/OldProvider.dll",
+                original);
+            var events = new List<string>();
+            var state = "old";
+            var restartCalls = 0;
+
+            Assert.Throws<InvalidOperationException>(() =>
+                _service.ApplyAndRestart(
+                    CreateDeletePlan("providers/OldProvider.dll"),
+                    () =>
+                    {
+                        state = "new";
+                        events.Add("commit");
+                    },
+                    () =>
+                    {
+                        state = "old";
+                        events.Add("rollback");
+                    },
+                    () =>
+                    {
+                        restartCalls++;
+                        events.Add("restart:" + state);
+                        if (restartCalls == 1)
+                        {
+                            throw new InvalidOperationException(
+                                "simulated restart failure");
+                        }
+                    },
+                    CancellationToken.None));
+
+            Assert.Equal(
+                new[]
+                {
+                    "commit",
+                    "restart:new",
+                    "rollback",
+                    "restart:old"
+                },
+                events);
             Assert.True(File.Exists(path));
             Assert.Equal(original, File.ReadAllBytes(path));
         }
