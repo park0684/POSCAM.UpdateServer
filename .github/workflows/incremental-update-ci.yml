@@ -49,7 +49,9 @@ jobs:
             throw "Newtonsoft.Json.dll was not copied to the UpdateClient output."
           }
 
+          $fileDescription = (Get-Item -LiteralPath $executable).VersionInfo.FileDescription
           Write-Host "Verified UpdateClient output: $outputDirectory"
+          Write-Host "FileDescription: $fileDescription"
 
       - name: Create UpdateClient package
         shell: pwsh
