@@ -9,8 +9,12 @@ namespace POSCAM.UpdateClient.Models
 
         public bool FullPackageUpdateRequired { get; set; }
 
+        public bool IncrementalUpdateRequired { get; set; }
+
         public UpdateCheckResponse? UpdateResponse { get; set; }
 
         public RepairPlan RepairPlan { get; set; } = new RepairPlan();
+
+        public InstalledManifest? TargetManifest { get; set; }
     }
 }
