@@ -1,4 +1,5 @@
 using System;
+using System.Collections.Generic;
 using System.IO;
 using System.Threading;
 using System.Threading.Tasks;
@@ -204,11 +205,14 @@ namespace POSCAM.UpdateClient.Services
         {
             try
             {
+                var previousManifest = _installedManifestStore.Load(
+                    plan.InstallDirectory);
                 var stagingResult = _fullPackageStagingService.Stage(
                     plan,
                     cancellationToken);
 
                 plan.Targets = stagingResult.Targets;
+                AppendRemovedManagedTargets(plan, previousManifest);
                 _planStore.Save(planPath, plan);
 
                 _workerLauncherService.Launch(
@@ -231,6 +235,59 @@ namespace POSCAM.UpdateClient.Services
                     exception);
                 return UpdateClientExitCodes.ApplyFailed;
             }
+        }
+
+        private static void AppendRemovedManagedTargets(
+            UpdateApplyPlan plan,
+            InstalledManifest? previousManifest)
+        {
+            if (previousManifest == null
+                || previousManifest.Files == null
+                || plan.TargetManifest == null
+                || plan.TargetManifest.Files == null)
+            {
+                return;
+            }
+
+            var latestPaths = new HashSet<string>(
+                StringComparer.OrdinalIgnoreCase);
+
+            foreach (var file in plan.TargetManifest.Files)
+            {
+                if (file != null && !string.IsNullOrWhiteSpace(file.Path))
+                {
+                    latestPaths.Add(NormalizeManifestPath(file.Path));
+                }
+            }
+
+            foreach (var file in previousManifest.Files)
+            {
+                if (file == null || string.IsNullOrWhiteSpace(file.Path))
+                {
+                    continue;
+                }
+
+                var normalizedPath = NormalizeManifestPath(file.Path);
+                if (latestPaths.Contains(normalizedPath))
+                {
+                    continue;
+                }
+
+                plan.Targets.Add(new UpdateApplyTarget
+                {
+                    Operation = UpdateTargetOperations.Delete,
+                    RelativePath = normalizedPath,
+                    DownloadedPath = "",
+                    ExpectedSize = 0,
+                    ExpectedSha256 = "",
+                    Reason = RepairReasons.Removed
+                });
+            }
+        }
+
+        private static string NormalizeManifestPath(string path)
+        {
+            return path.Trim().Replace('\\', '/');
         }
 
         private void CommitAppliedState(UpdateApplyPlan plan)
