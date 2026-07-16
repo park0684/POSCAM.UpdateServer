@@ -35,17 +35,14 @@ namespace POSCAM.UpdateClient.Services
                     || string.IsNullOrWhiteSpace(manifest.Version)
                     || manifest.Files == null)
                 {
-                    throw new InvalidDataException(
-                        "설치 Manifest의 필수 정보가 올바르지 않습니다.");
+                    return null;
                 }
 
                 return manifest;
             }
-            catch (JsonException exception)
+            catch (JsonException)
             {
-                throw new InvalidDataException(
-                    "설치 Manifest JSON을 읽지 못했습니다.",
-                    exception);
+                return null;
             }
         }
 
