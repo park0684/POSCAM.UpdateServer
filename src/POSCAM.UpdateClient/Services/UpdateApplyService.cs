@@ -117,15 +117,24 @@ namespace POSCAM.UpdateClient.Services
                 if (IsFileMode(plan.Mode))
                 {
                     recoveryHandled = true;
+                    var previousManifest = _installedManifestStore.Load(
+                        plan.InstallDirectory);
+                    var previousFallbackRequested = _installedManifestStore
+                        .IsFullPackageFallbackRequested(
+                            plan.InstallDirectory);
+
                     _fileRepairApplyService.ApplyAndRestart(
                         plan,
+                        () => CommitAppliedState(plan),
+                        () => RestoreAppliedState(
+                            plan.InstallDirectory,
+                            previousManifest,
+                            previousFallbackRequested),
                         () => _restartService.Restart(
                             plan.InstallDirectory,
                             plan.ApplicationFileName),
                         cancellationToken);
 
-                    PersistAppliedManifest(plan);
-                    TryClearFullPackageFallback(plan.InstallDirectory);
                     _planStore.Delete(planPath);
                     return UpdateClientExitCodes.Success;
                 }
@@ -224,16 +233,46 @@ namespace POSCAM.UpdateClient.Services
             }
         }
 
-        private void PersistAppliedManifest(UpdateApplyPlan plan)
+        private void CommitAppliedState(UpdateApplyPlan plan)
         {
-            if (plan.TargetManifest == null)
+            if (plan.TargetManifest != null)
             {
-                return;
+                _installedManifestStore.Save(
+                    plan.InstallDirectory,
+                    plan.TargetManifest);
             }
 
-            _installedManifestStore.Save(
-                plan.InstallDirectory,
-                plan.TargetManifest);
+            _installedManifestStore.ClearFullPackageFallback(
+                plan.InstallDirectory);
+        }
+
+        private void RestoreAppliedState(
+            string installDirectory,
+            InstalledManifest? previousManifest,
+            bool previousFallbackRequested)
+        {
+            if (previousManifest == null)
+            {
+                _installedManifestStore.Delete(installDirectory);
+            }
+            else
+            {
+                _installedManifestStore.Save(
+                    installDirectory,
+                    previousManifest);
+            }
+
+            if (previousFallbackRequested)
+            {
+                _installedManifestStore.RequestFullPackageFallback(
+                    installDirectory,
+                    "RollbackRestore");
+            }
+            else
+            {
+                _installedManifestStore.ClearFullPackageFallback(
+                    installDirectory);
+            }
         }
 
         private void TryRequestFullPackageFallback(
@@ -260,23 +299,6 @@ namespace POSCAM.UpdateClient.Services
                     new AggregateException(
                         applyException,
                         markerException));
-            }
-        }
-
-        private void TryClearFullPackageFallback(string installDirectory)
-        {
-            try
-            {
-                _installedManifestStore.ClearFullPackageFallback(
-                    installDirectory);
-            }
-            catch (Exception exception)
-            {
-                UpdateClientLog.Error(
-                    installDirectory,
-                    "apply.fallback-clear-failed",
-                    "업데이트 성공 후 Full Package 전환 상태를 정리하지 못했습니다.",
-                    exception);
             }
         }
 
