@@ -123,6 +123,10 @@ namespace POSCAM.UpdateClient.Services
                     var previousFallbackRequested = _installedManifestStore
                         .IsFullPackageFallbackRequested(
                             plan.InstallDirectory);
+                    var forceFullPackageFallback = string.Equals(
+                        plan.Mode,
+                        UpdateApplyModes.IncrementalUpdate,
+                        StringComparison.Ordinal);
 
                     _fileRepairApplyService.ApplyAndRestart(
                         plan,
@@ -130,7 +134,8 @@ namespace POSCAM.UpdateClient.Services
                         () => RestoreAppliedState(
                             plan.InstallDirectory,
                             previousManifest,
-                            previousFallbackRequested),
+                            previousFallbackRequested,
+                            forceFullPackageFallback),
                         () => _restartService.Restart(
                             plan.InstallDirectory,
                             plan.ApplicationFileName),
@@ -252,6 +257,16 @@ namespace POSCAM.UpdateClient.Services
             var latestPaths = new HashSet<string>(
                 StringComparer.OrdinalIgnoreCase);
 
+            foreach (var target in plan.Targets)
+            {
+                if (target != null
+                    && !string.IsNullOrWhiteSpace(target.RelativePath))
+                {
+                    latestPaths.Add(
+                        NormalizeManifestPath(target.RelativePath));
+                }
+            }
+
             foreach (var file in plan.TargetManifest.Files)
             {
                 if (file != null && !string.IsNullOrWhiteSpace(file.Path))
@@ -306,7 +321,8 @@ namespace POSCAM.UpdateClient.Services
         private void RestoreAppliedState(
             string installDirectory,
             InstalledManifest? previousManifest,
-            bool previousFallbackRequested)
+            bool previousFallbackRequested,
+            bool forceFullPackageFallback)
         {
             if (previousManifest == null)
             {
@@ -319,7 +335,13 @@ namespace POSCAM.UpdateClient.Services
                     previousManifest);
             }
 
-            if (previousFallbackRequested)
+            if (forceFullPackageFallback)
+            {
+                _installedManifestStore.RequestFullPackageFallback(
+                    installDirectory,
+                    "IncrementalApplyFailed");
+            }
+            else if (previousFallbackRequested)
             {
                 _installedManifestStore.RequestFullPackageFallback(
                     installDirectory,
