@@ -9,7 +9,7 @@ namespace POSCAM.UpdateClient.Services
 {
     /// <summary>
     /// 검증된 복구 또는 증분 업데이트 파일을 설치 경로에 적용하고
-    /// 실패 시 교체·추가·삭제 작업을 모두 원래 상태로 되돌린다.
+    /// 실패 시 교체·추가·삭제 작업과 설치 상태를 모두 원래 상태로 되돌린다.
     /// </summary>
     internal sealed class FileRepairApplyService
     {
@@ -31,9 +31,34 @@ namespace POSCAM.UpdateClient.Services
             Action restartAction,
             CancellationToken cancellationToken)
         {
+            ApplyAndRestart(
+                plan,
+                () => { },
+                () => { },
+                restartAction,
+                cancellationToken);
+        }
+
+        public void ApplyAndRestart(
+            UpdateApplyPlan plan,
+            Action commitStateAction,
+            Action rollbackStateAction,
+            Action restartAction,
+            CancellationToken cancellationToken)
+        {
             if (plan == null)
             {
                 throw new ArgumentNullException(nameof(plan));
+            }
+
+            if (commitStateAction == null)
+            {
+                throw new ArgumentNullException(nameof(commitStateAction));
+            }
+
+            if (rollbackStateAction == null)
+            {
+                throw new ArgumentNullException(nameof(rollbackStateAction));
             }
 
             if (restartAction == null)
@@ -54,6 +79,7 @@ namespace POSCAM.UpdateClient.Services
                 }
 
                 cancellationToken.ThrowIfCancellationRequested();
+                commitStateAction();
                 restartAction();
             }
             catch (Exception applyException)
@@ -61,6 +87,7 @@ namespace POSCAM.UpdateClient.Services
                 RecoverPreviousApplication(
                     plan.InstallDirectory,
                     applied,
+                    rollbackStateAction,
                     restartAction,
                     applyException);
                 throw;
@@ -282,6 +309,7 @@ namespace POSCAM.UpdateClient.Services
         private void RecoverPreviousApplication(
             string installDirectory,
             IList<FileApplyOperation> applied,
+            Action rollbackStateAction,
             Action restartAction,
             Exception applyException)
         {
@@ -290,6 +318,7 @@ namespace POSCAM.UpdateClient.Services
             try
             {
                 RollbackAndVerify(applied);
+                rollbackStateAction();
 
                 UpdateClientLog.Info(
                     installDirectory,
@@ -297,7 +326,7 @@ namespace POSCAM.UpdateClient.Services
                         ? "apply.rollback.verified"
                         : "apply.prechange.verified",
                     hadAppliedChanges
-                        ? "파일 단위 적용 실패 후 기존 파일 복원과 무결성 검증을 완료했습니다."
+                        ? "파일 단위 적용 실패 후 기존 파일과 설치 상태 복원을 완료했습니다."
                         : "파일 변경 전에 적용이 실패하여 기존 설치 상태를 확인했습니다.");
             }
             catch (Exception rollbackException)
@@ -305,11 +334,11 @@ namespace POSCAM.UpdateClient.Services
                 UpdateClientLog.Error(
                     installDirectory,
                     "apply.rollback.failed",
-                    "파일 단위 적용 실패 후 기존 파일 복원 또는 무결성 검증에 실패했습니다.",
+                    "파일 단위 적용 실패 후 기존 파일 또는 설치 상태 복원에 실패했습니다.",
                     rollbackException);
 
                 throw new IOException(
-                    "업데이트 적용 실패 후 기존 파일 복원 또는 무결성 검증도 완료하지 못했습니다.",
+                    "업데이트 적용 실패 후 기존 파일 또는 설치 상태 복원도 완료하지 못했습니다.",
                     new AggregateException(
                         applyException,
                         rollbackException));
