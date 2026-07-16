@@ -8,9 +8,25 @@ namespace POSCAM.UpdateClient.Services
 {
     /// <summary>
     /// Update Check 요청에 사용할 대상 프로그램 버전을 결정한다.
+    /// 증분 업데이트가 적용된 이후에는 설치 Manifest 버전을 우선한다.
     /// </summary>
     internal sealed class ApplicationVersionResolver
     {
+        private readonly InstalledManifestStore _installedManifestStore;
+
+        public ApplicationVersionResolver()
+            : this(new InstalledManifestStore())
+        {
+        }
+
+        internal ApplicationVersionResolver(
+            InstalledManifestStore installedManifestStore)
+        {
+            _installedManifestStore = installedManifestStore
+                ?? throw new ArgumentNullException(
+                    nameof(installedManifestStore));
+        }
+
         public string Resolve(StartupCheckOptions options)
         {
             if (options == null)
@@ -34,6 +50,38 @@ namespace POSCAM.UpdateClient.Services
             {
                 throw new InvalidDataException(
                     "설치 경로가 비어 있습니다.");
+            }
+
+            var installedManifest = _installedManifestStore.Load(
+                options.InstallDirectory);
+
+            if (installedManifest != null)
+            {
+                if (!UpdateProductIdentity.TryNormalize(
+                        installedManifest.ProductCode,
+                        installedManifest.Architecture,
+                        out var installedProductCode,
+                        out var installedArchitecture)
+                    || !UpdateProductIdentity.TryNormalize(
+                        options.ProductCode,
+                        options.Architecture,
+                        out var requestedProductCode,
+                        out var requestedArchitecture)
+                    || !string.Equals(
+                        installedProductCode,
+                        requestedProductCode,
+                        StringComparison.Ordinal)
+                    || !string.Equals(
+                        installedArchitecture,
+                        requestedArchitecture,
+                        StringComparison.Ordinal)
+                    || string.IsNullOrWhiteSpace(installedManifest.Version))
+                {
+                    throw new InvalidDataException(
+                        "설치 Manifest의 제품, 아키텍처 또는 버전 정보가 현재 프로그램과 일치하지 않습니다.");
+                }
+
+                return installedManifest.Version.Trim();
             }
 
             if (string.IsNullOrWhiteSpace(options.ApplicationFileName))
