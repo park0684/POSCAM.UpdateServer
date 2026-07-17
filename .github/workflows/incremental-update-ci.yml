@@ -3,10 +3,10 @@ name: Incremental Update CI
 on:
   push:
     branches:
-      - agent/incremental-file-update
+      - master
   pull_request:
     branches:
-      - feature/initial-update-server
+      - master
   workflow_dispatch:
 
 permissions:
