@@ -136,7 +136,7 @@ public sealed partial class ArtifactUploadService
         return AdminServiceResult<ArtifactUploadResponse>.Fail(
             StatusCodes.Status409Conflict,
             UpdateErrorCode.InvalidReleaseState,
-            "Draft 상태의 릴리스에만 Artifact를 업로드할 수 있습니다.");
+            "Draft 또는 Disabled 상태의 릴리스에만 Artifact를 업로드할 수 있습니다.");
     }
 
     private static AdminServiceResult<ArtifactUploadResponse> ReleaseChanged()

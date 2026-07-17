@@ -108,13 +108,41 @@ public class ArtifactUploadServiceTests
             fixture.Storage.RemovedStorageKeys[0]);
     }
 
-    [Theory]
-    [InlineData(ReleaseStatus.Published)]
-    [InlineData(ReleaseStatus.Disabled)]
-    public async Task UploadAsync_Draft가_아니면_파일을_읽기전에_차단한다(
-        ReleaseStatus status)
+    [Fact]
+    public async Task UploadAsync_DisabledArtifact를_새파일로_교체하고_재게시준비상태로_만든다()
     {
-        var fixture = CreateFixture(preliminaryStatus: status);
+        var fixture = CreateFixture(
+            preliminaryStatus: ReleaseStatus.Disabled,
+            lockedStatus: ReleaseStatus.Disabled);
+
+        fixture.ArtifactQuery.LockedArtifact = CreateExistingArtifact();
+
+        var result = await fixture.Service.UploadAsync(10, CreateRequest());
+
+        Assert.True(result.Success);
+        Assert.Equal(StatusCodes.Status200OK, result.HttpStatusCode);
+        Assert.True(result.Data!.Replaced);
+        Assert.Equal(300, result.Data.ArtifactCode);
+        Assert.Equal("new-public-id", result.Data.PublicId);
+        Assert.NotNull(fixture.ArtifactRepository.LastReplacedArtifact);
+        Assert.Equal(
+            ArtifactStatus.Active,
+            fixture.ArtifactRepository.LastReplacedArtifact!.ArtifactStatus);
+
+        var audit = Assert.Single(fixture.AuditRepository.CreatedLogs);
+        Assert.Equal(AuditActions.ReplaceDisabledArtifact, audit.Action);
+        Assert.Contains("old-public-id", audit.BeforeData);
+        Assert.Contains("new-public-id", audit.AfterData);
+
+        Assert.True(fixture.DbContext.Connection.LastTransaction!.Committed);
+        Assert.Single(fixture.Storage.RemovedStorageKeys);
+    }
+
+    [Fact]
+    public async Task UploadAsync_Published는_파일을_읽기전에_차단한다()
+    {
+        var fixture = CreateFixture(
+            preliminaryStatus: ReleaseStatus.Published);
 
         var result = await fixture.Service.UploadAsync(10, CreateRequest());
 

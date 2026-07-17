@@ -130,7 +130,7 @@ SET rel_status = @PublishedStatus,
     rel_published_at = UTC_TIMESTAMP(),
     rel_udate = UTC_TIMESTAMP()
 WHERE rel_code = @ReleaseCode
-  AND rel_status = @DraftStatus;";
+  AND rel_status IN (@DraftStatus, @DisabledStatus);";
 
     internal const string DisableSql = @"
 UPDATE update_releases
@@ -369,6 +369,7 @@ LIMIT 1;";
             {
                 ReleaseCode = releaseCode,
                 DraftStatus = (int)ReleaseStatus.Draft,
+                DisabledStatus = (int)ReleaseStatus.Disabled,
                 PublishedStatus = (int)ReleaseStatus.Published
             },
             transaction,

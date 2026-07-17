@@ -13,7 +13,7 @@ using POSCAM.UpdateServer.Api.Storage;
 namespace POSCAM.UpdateServer.Api.Services;
 
 /// <summary>
-/// Draft Release에 ZIP Artifact를 신규 등록하거나 안전하게 교체한다.
+/// Draft 또는 Disabled Release에 ZIP Artifact를 신규 등록하거나 안전하게 교체한다.
 /// 대용량 파일 처리 중에는 DB 트랜잭션을 유지하지 않는다.
 /// </summary>
 public sealed partial class ArtifactUploadService : IArtifactUploadService
@@ -96,7 +96,8 @@ public sealed partial class ArtifactUploadService : IArtifactUploadService
             return ReleaseNotFound();
         }
 
-        if (preliminaryRelease.ReleaseStatus != ReleaseStatus.Draft)
+        if (preliminaryRelease.ReleaseStatus is not ReleaseStatus.Draft
+            and not ReleaseStatus.Disabled)
         {
             return InvalidReleaseState();
         }
@@ -164,7 +165,8 @@ public sealed partial class ArtifactUploadService : IArtifactUploadService
                     return ReleaseNotFound();
                 }
 
-                if (lockedRelease.ReleaseStatus != ReleaseStatus.Draft)
+                if (lockedRelease.ReleaseStatus is not ReleaseStatus.Draft
+                    and not ReleaseStatus.Disabled)
                 {
                     await transaction.RollbackAsync(CancellationToken.None);
                     return InvalidReleaseState();
@@ -256,7 +258,9 @@ public sealed partial class ArtifactUploadService : IArtifactUploadService
 
                 await CreateAuditAsync(
                     replaced
-                        ? AuditActions.ReplaceDraftArtifact
+                        ? lockedRelease.ReleaseStatus == ReleaseStatus.Disabled
+                            ? AuditActions.ReplaceDisabledArtifact
+                            : AuditActions.ReplaceDraftArtifact
                         : AuditActions.Upload,
                     existing,
                     savedArtifact,
@@ -297,8 +301,8 @@ public sealed partial class ArtifactUploadService : IArtifactUploadService
                 return AdminServiceResult<ArtifactUploadResponse>.Ok(
                     MapResponse(savedArtifact, replaced, manifestFiles.Count),
                     replaced
-                        ? "Draft Artifact를 교체했습니다."
-                        : "Draft Artifact를 업로드했습니다.",
+                        ? "Artifact를 교체했습니다."
+                        : "Artifact를 업로드했습니다.",
                     replaced
                         ? StatusCodes.Status200OK
                         : StatusCodes.Status201Created);

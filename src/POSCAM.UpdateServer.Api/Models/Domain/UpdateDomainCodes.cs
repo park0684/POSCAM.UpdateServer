@@ -109,6 +109,7 @@ public static class AuditActions
     public const string Update = "UPDATE";
     public const string Upload = "UPLOAD";
     public const string ReplaceDraftArtifact = "REPLACE_DRAFT_ARTIFACT";
+    public const string ReplaceDisabledArtifact = "REPLACE_DISABLED_ARTIFACT";
     public const string Publish = "PUBLISH";
     public const string Disable = "DISABLE";
     public const string DeleteDraft = "DELETE_DRAFT";
