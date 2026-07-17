@@ -337,7 +337,7 @@ namespace POSCAM.UpdateClient.Services
             {
                 ProductCode = productCode,
                 Architecture = architecture,
-                Version = response.LatestVersion.Trim(),
+                Version = response.LatestVersion!.Trim(),
                 InstalledAtUtc = DateTime.UtcNow
             };
             var paths = new HashSet<string>(
