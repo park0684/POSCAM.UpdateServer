@@ -1,5 +1,6 @@
 using System;
 using System.Collections.Generic;
+using POSCAM.UpdateClient.Services;
 
 namespace POSCAM.UpdateClient.Models
 {
@@ -93,18 +94,31 @@ namespace POSCAM.UpdateClient.Models
                 return false;
             }
 
+            string baseUrl;
+
+            if (values.TryGetValue("--base-url", out var commandLineBaseUrl))
+            {
+                if (!UpdateClientConfiguration.TryResolveUpdateServerBaseUrl(
+                        commandLineBaseUrl,
+                        out baseUrl))
+                {
+                    return false;
+                }
+            }
+            else if (!UpdateClientConfiguration.TryGetUpdateServerBaseUrl(
+                         out baseUrl))
+            {
+                return false;
+            }
+
             var parsed = new StartupCheckOptions
             {
                 InstallDirectory = installDirectory,
                 ApplicationFileName = applicationFileName,
                 ProductCode = normalizedProductCode,
-                Architecture = normalizedArchitecture
+                Architecture = normalizedArchitecture,
+                BaseUrl = baseUrl
             };
-
-            if (values.TryGetValue("--base-url", out var baseUrl))
-            {
-                parsed.BaseUrl = baseUrl;
-            }
 
             if (values.TryGetValue("--os", out var operatingSystem))
             {

@@ -6,6 +6,9 @@ namespace POSCAM.UpdateClient.Models
     internal static class UpdateApplyModes
     {
         public const string FullPackage = "FullPackage";
+
         public const string FileRepair = "FileRepair";
+
+        public const string IncrementalUpdate = "IncrementalUpdate";
     }
 }

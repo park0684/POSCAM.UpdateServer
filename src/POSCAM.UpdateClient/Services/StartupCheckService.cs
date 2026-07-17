@@ -1,4 +1,5 @@
 using System;
+using System.Collections.Generic;
 using System.IO;
 using System.Net.Http;
 using System.Threading;
@@ -15,11 +16,25 @@ namespace POSCAM.UpdateClient.Services
         private readonly IUpdateServerClient _updateServerClient;
         private readonly ApplicationVersionResolver _versionResolver;
         private readonly ManifestRepairPlanner _repairPlanner;
+        private readonly InstalledManifestStore _installedManifestStore;
 
         public StartupCheckService(
             IUpdateServerClient updateServerClient,
             ApplicationVersionResolver versionResolver,
             ManifestRepairPlanner repairPlanner)
+            : this(
+                updateServerClient,
+                versionResolver,
+                repairPlanner,
+                new InstalledManifestStore())
+        {
+        }
+
+        internal StartupCheckService(
+            IUpdateServerClient updateServerClient,
+            ApplicationVersionResolver versionResolver,
+            ManifestRepairPlanner repairPlanner,
+            InstalledManifestStore installedManifestStore)
         {
             _updateServerClient = updateServerClient
                 ?? throw new ArgumentNullException(nameof(updateServerClient));
@@ -27,6 +42,9 @@ namespace POSCAM.UpdateClient.Services
                 ?? throw new ArgumentNullException(nameof(versionResolver));
             _repairPlanner = repairPlanner
                 ?? throw new ArgumentNullException(nameof(repairPlanner));
+            _installedManifestStore = installedManifestStore
+                ?? throw new ArgumentNullException(
+                    nameof(installedManifestStore));
         }
 
         public async Task<StartupCheckResult> CheckAsync(
@@ -120,28 +138,27 @@ namespace POSCAM.UpdateClient.Services
                     + " LatestVersion=" + (response.LatestVersion ?? "")
                     + " ManifestFiles=" + manifestCount);
 
-            if (response.UpdateAvailable)
-            {
-                UpdateClientLog.Info(
-                    options.InstallDirectory,
-                    "StartupCheck.Decision",
-                    "Mode=FullPackage ExitCode=10");
-
-                return new StartupCheckResult
-                {
-                    ExitCode = UpdateClientExitCodes.ApplyRequired,
-                    FullPackageUpdateRequired = true,
-                    UpdateResponse = response
-                };
-            }
-
-            RepairPlan repairPlan;
-
             try
             {
-                repairPlan = _repairPlanner.CreatePlan(
-                    options.InstallDirectory,
-                    response.Files);
+                var targetManifest = CreateTargetManifest(
+                    options,
+                    response);
+
+                if (response.UpdateAvailable)
+                {
+                    return CreateVersionUpdateDecision(
+                        options,
+                        currentVersion,
+                        response,
+                        targetManifest,
+                        manifestCount);
+                }
+
+                return CreateRepairDecision(
+                    options,
+                    response,
+                    targetManifest,
+                    manifestCount);
             }
             catch (Exception exception)
                 when (exception is ArgumentException
@@ -161,6 +178,108 @@ namespace POSCAM.UpdateClient.Services
                     UpdateResponse = response
                 };
             }
+        }
+
+        private StartupCheckResult CreateVersionUpdateDecision(
+            StartupCheckOptions options,
+            string currentVersion,
+            UpdateCheckResponse response,
+            InstalledManifest? targetManifest,
+            int manifestCount)
+        {
+            var installedManifest = _installedManifestStore.Load(
+                options.InstallDirectory);
+            var fallbackRequested = _installedManifestStore
+                .IsFullPackageFallbackRequested(
+                    options.InstallDirectory);
+
+            if (fallbackRequested
+                || installedManifest == null
+                || targetManifest == null
+                || !IsInstalledManifestCompatible(
+                    installedManifest,
+                    options,
+                    currentVersion))
+            {
+                UpdateClientLog.Info(
+                    options.InstallDirectory,
+                    "StartupCheck.Decision",
+                    "Mode=FullPackage ManifestFiles=" + manifestCount
+                        + " FallbackRequested=" + fallbackRequested
+                        + " ExitCode=10");
+
+                return new StartupCheckResult
+                {
+                    ExitCode = UpdateClientExitCodes.ApplyRequired,
+                    FullPackageUpdateRequired = true,
+                    IncrementalUpdateRequired = false,
+                    UpdateResponse = response,
+                    TargetManifest = targetManifest
+                };
+            }
+
+            var incrementalPlan = _repairPlanner.CreateIncrementalPlan(
+                options.InstallDirectory,
+                response.Files,
+                installedManifest);
+
+            if (!incrementalPlan.HasRepairTargets)
+            {
+                UpdateClientLog.Info(
+                    options.InstallDirectory,
+                    "StartupCheck.Decision",
+                    "Mode=FullPackage"
+                        + " Reason=NoIncrementalTargets"
+                        + " ManifestFiles=" + manifestCount
+                        + " ExitCode=10");
+
+                return new StartupCheckResult
+                {
+                    ExitCode = UpdateClientExitCodes.ApplyRequired,
+                    FullPackageUpdateRequired = true,
+                    IncrementalUpdateRequired = false,
+                    UpdateResponse = response,
+                    TargetManifest = targetManifest
+                };
+            }
+
+            foreach (var target in incrementalPlan.Targets)
+            {
+                UpdateClientLog.Info(
+                    options.InstallDirectory,
+                    "StartupCheck.IncrementalTarget",
+                    "Operation=" + target.Operation
+                        + " Path=" + target.RelativePath
+                        + " Reason=" + target.Reason);
+            }
+
+            UpdateClientLog.Info(
+                options.InstallDirectory,
+                "StartupCheck.Decision",
+                "Mode=IncrementalUpdate ManifestFiles=" + manifestCount
+                    + " Targets=" + incrementalPlan.Targets.Count
+                    + " ExitCode=" + UpdateClientExitCodes.ApplyRequired);
+
+            return new StartupCheckResult
+            {
+                ExitCode = UpdateClientExitCodes.ApplyRequired,
+                FullPackageUpdateRequired = false,
+                IncrementalUpdateRequired = true,
+                UpdateResponse = response,
+                RepairPlan = incrementalPlan,
+                TargetManifest = targetManifest
+            };
+        }
+
+        private StartupCheckResult CreateRepairDecision(
+            StartupCheckOptions options,
+            UpdateCheckResponse response,
+            InstalledManifest? targetManifest,
+            int manifestCount)
+        {
+            var repairPlan = _repairPlanner.CreatePlan(
+                options.InstallDirectory,
+                response.Files);
 
             foreach (var target in repairPlan.Targets)
             {
@@ -186,9 +305,137 @@ namespace POSCAM.UpdateClient.Services
             {
                 ExitCode = exitCode,
                 FullPackageUpdateRequired = false,
+                IncrementalUpdateRequired = false,
                 UpdateResponse = response,
-                RepairPlan = repairPlan
+                RepairPlan = repairPlan,
+                TargetManifest = targetManifest
             };
+        }
+
+        private static InstalledManifest? CreateTargetManifest(
+            StartupCheckOptions options,
+            UpdateCheckResponse response)
+        {
+            if (response.Files == null
+                || response.Files.Count == 0
+                || string.IsNullOrWhiteSpace(response.LatestVersion))
+            {
+                return null;
+            }
+
+            if (!UpdateProductIdentity.TryNormalize(
+                options.ProductCode,
+                options.Architecture,
+                out var productCode,
+                out var architecture))
+            {
+                throw new InvalidDataException(
+                    "업데이트 제품 또는 아키텍처 정보가 올바르지 않습니다.");
+            }
+
+            var manifest = new InstalledManifest
+            {
+                ProductCode = productCode,
+                Architecture = architecture,
+                Version = response.LatestVersion!.Trim(),
+                InstalledAtUtc = DateTime.UtcNow
+            };
+            var paths = new HashSet<string>(
+                StringComparer.OrdinalIgnoreCase);
+
+            foreach (var file in response.Files)
+            {
+                if (file == null || !file.Required)
+                {
+                    continue;
+                }
+
+                if (string.IsNullOrWhiteSpace(file.Path)
+                    || file.Size < 0
+                    || !IsValidSha256(file.Sha256))
+                {
+                    throw new InvalidDataException(
+                        "서버 Manifest 파일 정보가 올바르지 않습니다.");
+                }
+
+                var path = file.Path.Trim().Replace('\\', '/');
+                if (!paths.Add(path))
+                {
+                    throw new InvalidDataException(
+                        "서버 Manifest에 동일한 파일 경로가 중복되어 있습니다: "
+                        + path);
+                }
+
+                manifest.Files.Add(new InstalledManifestFile
+                {
+                    Path = path,
+                    Size = file.Size,
+                    Sha256 = file.Sha256.Trim().ToUpperInvariant()
+                });
+            }
+
+            return manifest.Files.Count == 0 ? null : manifest;
+        }
+
+        private static bool IsInstalledManifestCompatible(
+            InstalledManifest installedManifest,
+            StartupCheckOptions options,
+            string currentVersion)
+        {
+            if (!UpdateProductIdentity.TryNormalize(
+                    installedManifest.ProductCode,
+                    installedManifest.Architecture,
+                    out var installedProductCode,
+                    out var installedArchitecture)
+                || !UpdateProductIdentity.TryNormalize(
+                    options.ProductCode,
+                    options.Architecture,
+                    out var requestedProductCode,
+                    out var requestedArchitecture))
+            {
+                return false;
+            }
+
+            return string.Equals(
+                    installedProductCode,
+                    requestedProductCode,
+                    StringComparison.Ordinal)
+                && string.Equals(
+                    installedArchitecture,
+                    requestedArchitecture,
+                    StringComparison.Ordinal)
+                && string.Equals(
+                    installedManifest.Version.Trim(),
+                    currentVersion.Trim(),
+                    StringComparison.OrdinalIgnoreCase);
+        }
+
+        private static bool IsValidSha256(string value)
+        {
+            if (string.IsNullOrWhiteSpace(value))
+            {
+                return false;
+            }
+
+            var normalized = value.Trim();
+            if (normalized.Length != 64)
+            {
+                return false;
+            }
+
+            foreach (var character in normalized)
+            {
+                var isHex = character >= '0' && character <= '9'
+                    || character >= 'a' && character <= 'f'
+                    || character >= 'A' && character <= 'F';
+
+                if (!isHex)
+                {
+                    return false;
+                }
+            }
+
+            return true;
         }
     }
 }

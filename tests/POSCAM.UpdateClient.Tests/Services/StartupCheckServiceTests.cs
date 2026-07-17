@@ -1,4 +1,5 @@
 using System;
+using System.Collections.Generic;
 using System.IO;
 using System.Security.Cryptography;
 using System.Text;
@@ -43,6 +44,94 @@ namespace POSCAM.UpdateClient.Tests.Services
 
             Assert.Equal(UpdateClientExitCodes.ApplyRequired, result.ExitCode);
             Assert.True(result.FullPackageUpdateRequired);
+            Assert.False(result.RepairPlan.HasRepairTargets);
+        }
+
+        [Fact]
+        public async Task CheckAsync_UpdateAvailableAndOnlyExecutableChanged_TargetsOnlyExecutable()
+        {
+            var previousExecutable = Encoding.UTF8.GetBytes("old executable");
+            var latestExecutable = Encoding.UTF8.GetBytes("new executable");
+            var unchangedLibrary = Encoding.UTF8.GetBytes("unchanged library");
+
+            WriteInstalledFile("PcCam.exe", previousExecutable);
+            WriteInstalledFile("Shared.dll", unchangedLibrary);
+            SaveInstalledManifest(
+                "1.0.0",
+                CreateInstalledManifestFile(
+                    "PcCam.exe",
+                    previousExecutable),
+                CreateInstalledManifestFile(
+                    "Shared.dll",
+                    unchangedLibrary));
+
+            var fakeClient = new FakeUpdateServerClient
+            {
+                Response = new UpdateCheckResponse
+                {
+                    UpdateAvailable = true,
+                    LatestVersion = "1.0.1",
+                    Files =
+                    {
+                        CreateManifestFile(
+                            "PcCam.exe",
+                            latestExecutable),
+                        CreateManifestFile(
+                            "Shared.dll",
+                            unchangedLibrary)
+                    }
+                }
+            };
+
+            var result = await CreateService(fakeClient).CheckAsync(
+                CreateOptions(),
+                CancellationToken.None);
+
+            Assert.Equal(UpdateClientExitCodes.ApplyRequired, result.ExitCode);
+            Assert.False(result.FullPackageUpdateRequired);
+            Assert.True(result.IncrementalUpdateRequired);
+
+            var target = Assert.Single(result.RepairPlan.Targets);
+            Assert.Equal("PcCam.exe", target.RelativePath);
+            Assert.Equal(UpdateTargetOperations.Replace, target.Operation);
+            Assert.Equal(RepairReasons.HashMismatch, target.Reason);
+        }
+
+        [Fact]
+        public async Task CheckAsync_UpdateAvailableWithoutIncrementalTargets_FallsBackToFullPackage()
+        {
+            var matchingExecutable = Encoding.UTF8.GetBytes(
+                "matching executable");
+
+            WriteInstalledFile("PcCam.exe", matchingExecutable);
+            SaveInstalledManifest(
+                "1.0.0",
+                CreateInstalledManifestFile(
+                    "PcCam.exe",
+                    matchingExecutable));
+
+            var fakeClient = new FakeUpdateServerClient
+            {
+                Response = new UpdateCheckResponse
+                {
+                    UpdateAvailable = true,
+                    LatestVersion = "1.0.1",
+                    Files =
+                    {
+                        CreateManifestFile(
+                            "PcCam.exe",
+                            matchingExecutable)
+                    }
+                }
+            };
+
+            var result = await CreateService(fakeClient).CheckAsync(
+                CreateOptions(),
+                CancellationToken.None);
+
+            Assert.Equal(UpdateClientExitCodes.ApplyRequired, result.ExitCode);
+            Assert.True(result.FullPackageUpdateRequired);
+            Assert.False(result.IncrementalUpdateRequired);
             Assert.False(result.RepairPlan.HasRepairTargets);
         }
 
@@ -220,6 +309,51 @@ namespace POSCAM.UpdateClient.Tests.Services
                 OperatingSystem = "windows",
                 Architecture = "x86",
                 Channel = "stable"
+            };
+        }
+
+        private void SaveInstalledManifest(
+            string version,
+            params InstalledManifestFile[] files)
+        {
+            new InstalledManifestStore().Save(
+                _installDirectory,
+                new InstalledManifest
+                {
+                    ProductCode = "PCCAM",
+                    Architecture = "x86",
+                    Version = version,
+                    InstalledAtUtc = DateTime.UtcNow,
+                    Files = new List<InstalledManifestFile>(files)
+                });
+        }
+
+        private void WriteInstalledFile(
+            string relativePath,
+            byte[] content)
+        {
+            var path = Path.Combine(
+                _installDirectory,
+                relativePath.Replace('/', Path.DirectorySeparatorChar));
+            var directory = Path.GetDirectoryName(path);
+
+            if (!string.IsNullOrWhiteSpace(directory))
+            {
+                Directory.CreateDirectory(directory);
+            }
+
+            File.WriteAllBytes(path, content);
+        }
+
+        private static InstalledManifestFile CreateInstalledManifestFile(
+            string path,
+            byte[] content)
+        {
+            return new InstalledManifestFile
+            {
+                Path = path,
+                Size = content.LongLength,
+                Sha256 = CalculateSha256(content)
             };
         }
 

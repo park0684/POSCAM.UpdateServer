@@ -58,10 +58,33 @@ namespace POSCAM.UpdateClient.Tests.Services
         }
 
         [Fact]
+        public void ApplyAndRestart_DeleteTarget_RemovesOldManagedFile()
+        {
+            var removedPath = WriteInstallFile(
+                "providers/OldProvider.dll",
+                Encoding.UTF8.GetBytes("old provider"));
+            var plan = CreatePlan(
+                "PcCam.exe",
+                Encoding.UTF8.GetBytes("new app"));
+            AddDeleteTarget(plan, "providers/OldProvider.dll");
+
+            CreateService().ApplyAndRestart(
+                plan,
+                () => { },
+                CancellationToken.None);
+
+            Assert.False(File.Exists(removedPath));
+        }
+
+        [Fact]
         public void ApplyAndRestart_RestartFailure_RollsBackVerifiesAndRestartsPreviousApp()
         {
             var originalApp = Encoding.UTF8.GetBytes("old app");
+            var removedContent = Encoding.UTF8.GetBytes("old provider");
             var appPath = WriteInstallFile("PcCam.exe", originalApp);
+            var removedPath = WriteInstallFile(
+                "providers/OldProvider.dll",
+                removedContent);
             var plan = CreatePlan(
                 "PcCam.exe",
                 Encoding.UTF8.GetBytes("new app"));
@@ -69,6 +92,7 @@ namespace POSCAM.UpdateClient.Tests.Services
                 plan,
                 "providers/provider.dll",
                 Encoding.UTF8.GetBytes("new provider"));
+            AddDeleteTarget(plan, "providers/OldProvider.dll");
             var restartCount = 0;
 
             Assert.Throws<IOException>(() => CreateService().ApplyAndRestart(
@@ -89,6 +113,8 @@ namespace POSCAM.UpdateClient.Tests.Services
             Assert.False(File.Exists(_pathService.ResolveInstallFilePath(
                 _installDirectory,
                 "providers/provider.dll")));
+            Assert.True(File.Exists(removedPath));
+            Assert.Equal(removedContent, File.ReadAllBytes(removedPath));
         }
 
         [Fact]
@@ -235,11 +261,24 @@ namespace POSCAM.UpdateClient.Tests.Services
 
             plan.Targets.Add(new UpdateApplyTarget
             {
+                Operation = UpdateTargetOperations.Replace,
                 RelativePath = relativePath,
                 DownloadedPath = sourcePath,
                 ExpectedSize = content.LongLength,
                 ExpectedSha256 = CalculateSha256(content),
                 Reason = UpdateApplyReasons.FullPackage
+            });
+        }
+
+        private static void AddDeleteTarget(
+            UpdateApplyPlan plan,
+            string relativePath)
+        {
+            plan.Targets.Add(new UpdateApplyTarget
+            {
+                Operation = UpdateTargetOperations.Delete,
+                RelativePath = relativePath,
+                Reason = RepairReasons.Removed
             });
         }
 

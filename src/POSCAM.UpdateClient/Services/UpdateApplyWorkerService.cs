@@ -16,6 +16,7 @@ namespace POSCAM.UpdateClient.Services
         private readonly IProcessWaitService _processWaitService;
         private readonly FullPackageApplyService _fullPackageApplyService;
         private readonly IApplicationRestartService _restartService;
+        private readonly InstalledManifestStore _installedManifestStore;
 
         public UpdateApplyWorkerService(
             UpdateApplyPlanStore planStore,
@@ -23,6 +24,23 @@ namespace POSCAM.UpdateClient.Services
             IProcessWaitService processWaitService,
             FullPackageApplyService fullPackageApplyService,
             IApplicationRestartService restartService)
+            : this(
+                planStore,
+                pathService,
+                processWaitService,
+                fullPackageApplyService,
+                restartService,
+                new InstalledManifestStore())
+        {
+        }
+
+        internal UpdateApplyWorkerService(
+            UpdateApplyPlanStore planStore,
+            UpdateWorkPathService pathService,
+            IProcessWaitService processWaitService,
+            FullPackageApplyService fullPackageApplyService,
+            IApplicationRestartService restartService,
+            InstalledManifestStore installedManifestStore)
         {
             _planStore = planStore
                 ?? throw new ArgumentNullException(nameof(planStore));
@@ -34,6 +52,9 @@ namespace POSCAM.UpdateClient.Services
                 ?? throw new ArgumentNullException(nameof(fullPackageApplyService));
             _restartService = restartService
                 ?? throw new ArgumentNullException(nameof(restartService));
+            _installedManifestStore = installedManifestStore
+                ?? throw new ArgumentNullException(
+                    nameof(installedManifestStore));
         }
 
         public async Task<int> ApplyAsync(
@@ -71,8 +92,19 @@ namespace POSCAM.UpdateClient.Services
                 }
 
                 recoveryHandled = true;
+                var previousManifest = _installedManifestStore.Load(
+                    plan.InstallDirectory);
+                var previousFallbackRequested = _installedManifestStore
+                    .IsFullPackageFallbackRequested(
+                        plan.InstallDirectory);
+
                 _fullPackageApplyService.ApplyAndRestart(
                     plan,
+                    () => CommitAppliedState(plan),
+                    () => RestoreAppliedState(
+                        plan.InstallDirectory,
+                        previousManifest,
+                        previousFallbackRequested),
                     () => _restartService.Restart(
                         plan.InstallDirectory,
                         plan.ApplicationFileName),
@@ -107,6 +139,48 @@ namespace POSCAM.UpdateClient.Services
                     "Full Package worker 적용을 완료하지 못했습니다. 적용 계획은 유지됩니다.",
                     exception);
                 return UpdateClientExitCodes.ApplyFailed;
+            }
+        }
+
+        private void CommitAppliedState(UpdateApplyPlan plan)
+        {
+            if (plan.TargetManifest != null)
+            {
+                _installedManifestStore.Save(
+                    plan.InstallDirectory,
+                    plan.TargetManifest);
+            }
+
+            _installedManifestStore.ClearFullPackageFallback(
+                plan.InstallDirectory);
+        }
+
+        private void RestoreAppliedState(
+            string installDirectory,
+            InstalledManifest? previousManifest,
+            bool previousFallbackRequested)
+        {
+            if (previousManifest == null)
+            {
+                _installedManifestStore.Delete(installDirectory);
+            }
+            else
+            {
+                _installedManifestStore.Save(
+                    installDirectory,
+                    previousManifest);
+            }
+
+            if (previousFallbackRequested)
+            {
+                _installedManifestStore.RequestFullPackageFallback(
+                    installDirectory,
+                    "RollbackRestore");
+            }
+            else
+            {
+                _installedManifestStore.ClearFullPackageFallback(
+                    installDirectory);
             }
         }
 

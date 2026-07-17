@@ -1,4 +1,5 @@
 using System;
+using System.Collections.Generic;
 using System.IO;
 using System.Threading;
 using System.Threading.Tasks;
@@ -7,8 +8,8 @@ using POSCAM.UpdateClient.Models;
 namespace POSCAM.UpdateClient.Services
 {
     /// <summary>
-    /// 적용 계획을 검증하고 대상 프로세스 종료 후 파일 복구 또는 Full Package
-    /// worker 실행을 수행한다.
+    /// 적용 계획을 검증하고 대상 프로세스 종료 후 파일 단위 업데이트 또는
+    /// Full Package worker 실행을 수행한다.
     /// </summary>
     internal sealed class UpdateApplyService
     {
@@ -20,6 +21,7 @@ namespace POSCAM.UpdateClient.Services
         private readonly IUpdateWorkerLauncherService _workerLauncherService;
         private readonly IApplicationRestartService _restartService;
         private readonly Func<int> _currentProcessIdProvider;
+        private readonly InstalledManifestStore _installedManifestStore;
 
         public UpdateApplyService(
             UpdateApplyPlanStore planStore,
@@ -30,6 +32,29 @@ namespace POSCAM.UpdateClient.Services
             IUpdateWorkerLauncherService workerLauncherService,
             IApplicationRestartService restartService,
             Func<int> currentProcessIdProvider)
+            : this(
+                planStore,
+                pathService,
+                processWaitService,
+                fileRepairApplyService,
+                fullPackageStagingService,
+                workerLauncherService,
+                restartService,
+                currentProcessIdProvider,
+                new InstalledManifestStore())
+        {
+        }
+
+        internal UpdateApplyService(
+            UpdateApplyPlanStore planStore,
+            UpdateWorkPathService pathService,
+            IProcessWaitService processWaitService,
+            FileRepairApplyService fileRepairApplyService,
+            FullPackageStagingService fullPackageStagingService,
+            IUpdateWorkerLauncherService workerLauncherService,
+            IApplicationRestartService restartService,
+            Func<int> currentProcessIdProvider,
+            InstalledManifestStore installedManifestStore)
         {
             _planStore = planStore
                 ?? throw new ArgumentNullException(nameof(planStore));
@@ -48,6 +73,9 @@ namespace POSCAM.UpdateClient.Services
             _currentProcessIdProvider = currentProcessIdProvider
                 ?? throw new ArgumentNullException(
                     nameof(currentProcessIdProvider));
+            _installedManifestStore = installedManifestStore
+                ?? throw new ArgumentNullException(
+                    nameof(installedManifestStore));
         }
 
         public async Task<int> ApplyAsync(
@@ -87,14 +115,27 @@ namespace POSCAM.UpdateClient.Services
 
                 hostExitConfirmed = true;
 
-                if (string.Equals(
-                    plan.Mode,
-                    UpdateApplyModes.FileRepair,
-                    StringComparison.Ordinal))
+                if (IsFileMode(plan.Mode))
                 {
                     recoveryHandled = true;
+                    var previousManifest = _installedManifestStore.Load(
+                        plan.InstallDirectory);
+                    var previousFallbackRequested = _installedManifestStore
+                        .IsFullPackageFallbackRequested(
+                            plan.InstallDirectory);
+                    var forceFullPackageFallback = string.Equals(
+                        plan.Mode,
+                        UpdateApplyModes.IncrementalUpdate,
+                        StringComparison.Ordinal);
+
                     _fileRepairApplyService.ApplyAndRestart(
                         plan,
+                        () => CommitAppliedState(plan),
+                        () => RestoreAppliedState(
+                            plan.InstallDirectory,
+                            previousManifest,
+                            previousFallbackRequested,
+                            forceFullPackageFallback),
                         () => _restartService.Restart(
                             plan.InstallDirectory,
                             plan.ApplicationFileName),
@@ -128,6 +169,17 @@ namespace POSCAM.UpdateClient.Services
             catch (Exception exception)
                 when (IsHandledApplyException(exception))
             {
+                if (plan != null
+                    && string.Equals(
+                        plan.Mode,
+                        UpdateApplyModes.IncrementalUpdate,
+                        StringComparison.Ordinal))
+                {
+                    TryRequestFullPackageFallback(
+                        plan.InstallDirectory,
+                        exception);
+                }
+
                 if (!recoveryHandled)
                 {
                     await RestartAfterSafePrechangeFailureAsync(
@@ -158,11 +210,14 @@ namespace POSCAM.UpdateClient.Services
         {
             try
             {
+                var previousManifest = _installedManifestStore.Load(
+                    plan.InstallDirectory);
                 var stagingResult = _fullPackageStagingService.Stage(
                     plan,
                     cancellationToken);
 
                 plan.Targets = stagingResult.Targets;
+                AppendRemovedManagedTargets(plan, previousManifest);
                 _planStore.Save(planPath, plan);
 
                 _workerLauncherService.Launch(
@@ -184,6 +239,145 @@ namespace POSCAM.UpdateClient.Services
                     plan,
                     exception);
                 return UpdateClientExitCodes.ApplyFailed;
+            }
+        }
+
+        private static void AppendRemovedManagedTargets(
+            UpdateApplyPlan plan,
+            InstalledManifest? previousManifest)
+        {
+            if (previousManifest == null
+                || previousManifest.Files == null
+                || plan.TargetManifest == null
+                || plan.TargetManifest.Files == null)
+            {
+                return;
+            }
+
+            var latestPaths = new HashSet<string>(
+                StringComparer.OrdinalIgnoreCase);
+
+            foreach (var target in plan.Targets)
+            {
+                if (target != null
+                    && !string.IsNullOrWhiteSpace(target.RelativePath))
+                {
+                    latestPaths.Add(
+                        NormalizeManifestPath(target.RelativePath));
+                }
+            }
+
+            foreach (var file in plan.TargetManifest.Files)
+            {
+                if (file != null && !string.IsNullOrWhiteSpace(file.Path))
+                {
+                    latestPaths.Add(NormalizeManifestPath(file.Path));
+                }
+            }
+
+            foreach (var file in previousManifest.Files)
+            {
+                if (file == null || string.IsNullOrWhiteSpace(file.Path))
+                {
+                    continue;
+                }
+
+                var normalizedPath = NormalizeManifestPath(file.Path);
+                if (latestPaths.Contains(normalizedPath))
+                {
+                    continue;
+                }
+
+                plan.Targets.Add(new UpdateApplyTarget
+                {
+                    Operation = UpdateTargetOperations.Delete,
+                    RelativePath = normalizedPath,
+                    DownloadedPath = "",
+                    ExpectedSize = 0,
+                    ExpectedSha256 = "",
+                    Reason = RepairReasons.Removed
+                });
+            }
+        }
+
+        private static string NormalizeManifestPath(string path)
+        {
+            return path.Trim().Replace('\\', '/');
+        }
+
+        private void CommitAppliedState(UpdateApplyPlan plan)
+        {
+            if (plan.TargetManifest != null)
+            {
+                _installedManifestStore.Save(
+                    plan.InstallDirectory,
+                    plan.TargetManifest);
+            }
+
+            _installedManifestStore.ClearFullPackageFallback(
+                plan.InstallDirectory);
+        }
+
+        private void RestoreAppliedState(
+            string installDirectory,
+            InstalledManifest? previousManifest,
+            bool previousFallbackRequested,
+            bool forceFullPackageFallback)
+        {
+            if (previousManifest == null)
+            {
+                _installedManifestStore.Delete(installDirectory);
+            }
+            else
+            {
+                _installedManifestStore.Save(
+                    installDirectory,
+                    previousManifest);
+            }
+
+            if (forceFullPackageFallback)
+            {
+                _installedManifestStore.RequestFullPackageFallback(
+                    installDirectory,
+                    "IncrementalApplyFailed");
+            }
+            else if (previousFallbackRequested)
+            {
+                _installedManifestStore.RequestFullPackageFallback(
+                    installDirectory,
+                    "RollbackRestore");
+            }
+            else
+            {
+                _installedManifestStore.ClearFullPackageFallback(
+                    installDirectory);
+            }
+        }
+
+        private void TryRequestFullPackageFallback(
+            string installDirectory,
+            Exception applyException)
+        {
+            try
+            {
+                _installedManifestStore.RequestFullPackageFallback(
+                    installDirectory,
+                    "IncrementalApplyFailed");
+
+                UpdateClientLog.Info(
+                    installDirectory,
+                    "apply.incremental.fallback-requested",
+                    "증분 적용 실패로 다음 시작 시 Full Package 업데이트를 요청했습니다.");
+            }
+            catch (Exception markerException)
+            {
+                UpdateClientLog.Error(
+                    installDirectory,
+                    "apply.incremental.fallback-request-failed",
+                    "증분 적용 실패 후 Full Package 전환 상태를 저장하지 못했습니다.",
+                    new AggregateException(
+                        applyException,
+                        markerException));
             }
         }
 
@@ -319,6 +513,18 @@ namespace POSCAM.UpdateClient.Services
                 applicationFileName = "";
                 return false;
             }
+        }
+
+        private static bool IsFileMode(string mode)
+        {
+            return string.Equals(
+                    mode,
+                    UpdateApplyModes.FileRepair,
+                    StringComparison.Ordinal)
+                || string.Equals(
+                    mode,
+                    UpdateApplyModes.IncrementalUpdate,
+                    StringComparison.Ordinal);
         }
 
         private static bool IsHandledApplyException(Exception exception)

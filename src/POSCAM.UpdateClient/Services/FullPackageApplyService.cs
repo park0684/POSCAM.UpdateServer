@@ -9,7 +9,7 @@ namespace POSCAM.UpdateClient.Services
 {
     /// <summary>
     /// worker 경로에서 실행되어 Full Package staging 파일을 설치 경로에 적용한다.
-    /// 기존 파일은 작업별 백업 경로에 보관하고 실패 시 역순으로 복구한다.
+    /// 기존 파일과 설치 상태는 실패 시 역순으로 복구한다.
     /// </summary>
     internal sealed class FullPackageApplyService
     {
@@ -31,9 +31,34 @@ namespace POSCAM.UpdateClient.Services
             Action restartAction,
             CancellationToken cancellationToken)
         {
+            ApplyAndRestart(
+                plan,
+                () => { },
+                () => { },
+                restartAction,
+                cancellationToken);
+        }
+
+        public void ApplyAndRestart(
+            UpdateApplyPlan plan,
+            Action commitStateAction,
+            Action rollbackStateAction,
+            Action restartAction,
+            CancellationToken cancellationToken)
+        {
             if (plan == null)
             {
                 throw new ArgumentNullException(nameof(plan));
+            }
+
+            if (commitStateAction == null)
+            {
+                throw new ArgumentNullException(nameof(commitStateAction));
+            }
+
+            if (rollbackStateAction == null)
+            {
+                throw new ArgumentNullException(nameof(rollbackStateAction));
             }
 
             if (restartAction == null)
@@ -54,6 +79,7 @@ namespace POSCAM.UpdateClient.Services
                 }
 
                 cancellationToken.ThrowIfCancellationRequested();
+                commitStateAction();
                 restartAction();
             }
             catch (Exception applyException)
@@ -61,6 +87,7 @@ namespace POSCAM.UpdateClient.Services
                 RecoverPreviousApplication(
                     plan.InstallDirectory,
                     applied,
+                    rollbackStateAction,
                     restartAction,
                     applyException);
                 throw;
@@ -102,8 +129,61 @@ namespace POSCAM.UpdateClient.Services
             foreach (var target in plan.Targets)
             {
                 if (target == null
-                    || string.IsNullOrWhiteSpace(target.RelativePath)
-                    || string.IsNullOrWhiteSpace(target.DownloadedPath)
+                    || string.IsNullOrWhiteSpace(target.RelativePath))
+                {
+                    throw new InvalidDataException(
+                        "Full Package 파일 대상 정보가 올바르지 않습니다.");
+                }
+
+                var operation = NormalizeOperation(target.Operation);
+                var relativePath = target.RelativePath;
+                var destinationPath = _pathService.ResolveInstallFilePath(
+                    plan.InstallDirectory,
+                    relativePath);
+
+                if (string.Equals(
+                    destinationPath,
+                    currentExecutable,
+                    StringComparison.OrdinalIgnoreCase))
+                {
+                    throw new InvalidDataException(
+                        "실행 중인 worker 파일은 직접 교체하거나 삭제할 수 없습니다.");
+                }
+
+                if (!destinations.Add(destinationPath))
+                {
+                    throw new InvalidDataException(
+                        "Full Package에 중복된 적용 대상이 있습니다.");
+                }
+
+                var applyOperation = new ApplyOperation
+                {
+                    Operation = operation,
+                    DestinationPath = destinationPath,
+                    BackupPath = _pathService.ResolveBackupFilePath(
+                        backupDirectory,
+                        relativePath)
+                };
+
+                if (string.Equals(
+                    operation,
+                    UpdateTargetOperations.Delete,
+                    StringComparison.Ordinal))
+                {
+                    if (!string.Equals(
+                        target.Reason,
+                        RepairReasons.Removed,
+                        StringComparison.Ordinal))
+                    {
+                        throw new InvalidDataException(
+                            "Full Package 삭제 대상의 사유가 올바르지 않습니다.");
+                    }
+
+                    operations.Add(applyOperation);
+                    continue;
+                }
+
+                if (string.IsNullOrWhiteSpace(target.DownloadedPath)
                     || target.ExpectedSize < 0
                     || !IsValidSha256(target.ExpectedSha256)
                     || !string.Equals(
@@ -112,13 +192,9 @@ namespace POSCAM.UpdateClient.Services
                         StringComparison.Ordinal))
                 {
                     throw new InvalidDataException(
-                        "Full Package 파일 대상 정보가 올바르지 않습니다.");
+                        "Full Package 교체 대상 정보가 올바르지 않습니다.");
                 }
 
-                var relativePath = target.RelativePath;
-                var destinationPath = _pathService.ResolveInstallFilePath(
-                    plan.InstallDirectory,
-                    relativePath);
                 var expectedSourcePath = _pathService.ResolveJobFilePath(
                     jobDirectory,
                     "staging/" + relativePath.Replace('\\', '/'));
@@ -132,21 +208,6 @@ namespace POSCAM.UpdateClient.Services
                 {
                     throw new InvalidDataException(
                         "Full Package staging 파일 경로가 계획과 일치하지 않습니다.");
-                }
-
-                if (string.Equals(
-                    destinationPath,
-                    currentExecutable,
-                    StringComparison.OrdinalIgnoreCase))
-                {
-                    throw new InvalidDataException(
-                        "실행 중인 worker 파일은 직접 교체할 수 없습니다.");
-                }
-
-                if (!destinations.Add(destinationPath))
-                {
-                    throw new InvalidDataException(
-                        "Full Package에 중복된 교체 대상이 있습니다.");
                 }
 
                 VerifyFile(
@@ -163,17 +224,11 @@ namespace POSCAM.UpdateClient.Services
                     containsApplication = true;
                 }
 
-                operations.Add(new ApplyOperation
-                {
-                    SourcePath = sourcePath,
-                    DestinationPath = destinationPath,
-                    BackupPath = _pathService.ResolveBackupFilePath(
-                        backupDirectory,
-                        relativePath),
-                    ExpectedSize = target.ExpectedSize,
-                    ExpectedSha256 = target.ExpectedSha256.Trim(),
-                    IsApplication = isApplication
-                });
+                applyOperation.SourcePath = sourcePath;
+                applyOperation.ExpectedSize = target.ExpectedSize;
+                applyOperation.ExpectedSha256 = target.ExpectedSha256.Trim();
+                applyOperation.IsApplication = isApplication;
+                operations.Add(applyOperation);
             }
 
             if (!containsApplication)
@@ -197,7 +252,7 @@ namespace POSCAM.UpdateClient.Services
             if (string.IsNullOrWhiteSpace(destinationDirectory))
             {
                 throw new InvalidDataException(
-                    "교체 대상 디렉터리를 확인할 수 없습니다.");
+                    "적용 대상 디렉터리를 확인할 수 없습니다.");
             }
 
             Directory.CreateDirectory(destinationDirectory);
@@ -205,32 +260,26 @@ namespace POSCAM.UpdateClient.Services
 
             if (operation.HadOriginal)
             {
-                var backupDirectory = Path.GetDirectoryName(
-                    operation.BackupPath);
-
-                if (string.IsNullOrWhiteSpace(backupDirectory))
-                {
-                    throw new InvalidDataException(
-                        "백업 대상 디렉터리를 확인할 수 없습니다.");
-                }
-
-                Directory.CreateDirectory(backupDirectory);
-                File.Copy(
-                    operation.DestinationPath,
-                    operation.BackupPath,
-                    true);
-
-                var backupFile = new FileInfo(operation.BackupPath);
-                operation.OriginalSize = backupFile.Length;
-                operation.OriginalSha256 =
-                    _hashCalculator.CalculateSha256(operation.BackupPath);
-                VerifyFile(
-                    operation.BackupPath,
-                    operation.OriginalSize,
-                    operation.OriginalSha256);
+                BackupOriginal(operation);
             }
 
             applied.Add(operation);
+
+            if (string.Equals(
+                operation.Operation,
+                UpdateTargetOperations.Delete,
+                StringComparison.Ordinal))
+            {
+                DeleteIfExists(operation.DestinationPath);
+
+                if (File.Exists(operation.DestinationPath))
+                {
+                    throw new IOException(
+                        "Full Package 삭제 대상 파일을 제거하지 못했습니다.");
+                }
+
+                return;
+            }
 
             var temporaryPath = operation.DestinationPath
                 + ".poscam-update.tmp";
@@ -255,9 +304,37 @@ namespace POSCAM.UpdateClient.Services
             }
         }
 
+        private void BackupOriginal(ApplyOperation operation)
+        {
+            var backupDirectory = Path.GetDirectoryName(
+                operation.BackupPath);
+
+            if (string.IsNullOrWhiteSpace(backupDirectory))
+            {
+                throw new InvalidDataException(
+                    "백업 대상 디렉터리를 확인할 수 없습니다.");
+            }
+
+            Directory.CreateDirectory(backupDirectory);
+            File.Copy(
+                operation.DestinationPath,
+                operation.BackupPath,
+                true);
+
+            var backupFile = new FileInfo(operation.BackupPath);
+            operation.OriginalSize = backupFile.Length;
+            operation.OriginalSha256 =
+                _hashCalculator.CalculateSha256(operation.BackupPath);
+            VerifyFile(
+                operation.BackupPath,
+                operation.OriginalSize,
+                operation.OriginalSha256);
+        }
+
         private void RecoverPreviousApplication(
             string installDirectory,
             IList<ApplyOperation> applied,
+            Action rollbackStateAction,
             Action restartAction,
             Exception applyException)
         {
@@ -266,6 +343,7 @@ namespace POSCAM.UpdateClient.Services
             try
             {
                 RollbackAndVerify(applied);
+                rollbackStateAction();
 
                 UpdateClientLog.Info(
                     installDirectory,
@@ -273,7 +351,7 @@ namespace POSCAM.UpdateClient.Services
                         ? "apply.rollback.verified"
                         : "apply.prechange.verified",
                     hadAppliedChanges
-                        ? "Full Package 적용 실패 후 기존 파일 복원과 무결성 검증을 완료했습니다."
+                        ? "Full Package 적용 실패 후 기존 파일과 설치 상태 복원을 완료했습니다."
                         : "파일 변경 전에 Full Package 적용이 실패하여 기존 설치 상태를 확인했습니다.");
             }
             catch (Exception rollbackException)
@@ -281,11 +359,11 @@ namespace POSCAM.UpdateClient.Services
                 UpdateClientLog.Error(
                     installDirectory,
                     "apply.rollback.failed",
-                    "Full Package 적용 실패 후 기존 파일 복원 또는 무결성 검증에 실패했습니다.",
+                    "Full Package 적용 실패 후 기존 파일 또는 설치 상태 복원에 실패했습니다.",
                     rollbackException);
 
                 throw new IOException(
-                    "Full Package 적용 실패 후 기존 파일 복원 또는 무결성 검증도 완료하지 못했습니다.",
+                    "Full Package 적용 실패 후 기존 파일 또는 설치 상태 복원도 완료하지 못했습니다.",
                     new AggregateException(
                         applyException,
                         rollbackException));
@@ -411,6 +489,30 @@ namespace POSCAM.UpdateClient.Services
             }
         }
 
+        private static string NormalizeOperation(string value)
+        {
+            if (string.IsNullOrWhiteSpace(value))
+            {
+                return UpdateTargetOperations.Replace;
+            }
+
+            var normalized = value.Trim();
+            if (!string.Equals(
+                    normalized,
+                    UpdateTargetOperations.Replace,
+                    StringComparison.Ordinal)
+                && !string.Equals(
+                    normalized,
+                    UpdateTargetOperations.Delete,
+                    StringComparison.Ordinal))
+            {
+                throw new InvalidDataException(
+                    "지원하지 않는 Full Package 작업 유형입니다.");
+            }
+
+            return normalized;
+        }
+
         private static bool IsValidSha256(string? value)
         {
             if (value == null)
@@ -450,6 +552,9 @@ namespace POSCAM.UpdateClient.Services
 
         private sealed class ApplyOperation
         {
+            public string Operation { get; set; }
+                = UpdateTargetOperations.Replace;
+
             public string SourcePath { get; set; } = "";
 
             public string DestinationPath { get; set; } = "";

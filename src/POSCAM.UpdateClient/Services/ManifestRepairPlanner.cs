@@ -6,7 +6,7 @@ using POSCAM.UpdateClient.Models;
 namespace POSCAM.UpdateClient.Services
 {
     /// <summary>
-    /// UpdateServer Manifest와 로컬 설치 파일을 비교해 복구 계획을 생성한다.
+    /// UpdateServer Manifest와 로컬 설치 파일을 비교해 복구 또는 증분 업데이트 계획을 생성한다.
     /// </summary>
     internal sealed class ManifestRepairPlanner
     {
@@ -29,14 +29,60 @@ namespace POSCAM.UpdateClient.Services
         {
             var installRoot = NormalizeInstallRoot(installDirectory);
             var plan = new RepairPlan();
+            AddReplaceTargets(
+                installRoot,
+                files,
+                plan,
+                new HashSet<string>(StringComparer.OrdinalIgnoreCase));
+            return plan;
+        }
 
-            if (files == null)
+        public RepairPlan CreateIncrementalPlan(
+            string installDirectory,
+            IEnumerable<UpdateManifestFile>? latestFiles,
+            InstalledManifest installedManifest)
+        {
+            if (installedManifest == null)
             {
-                return plan;
+                throw new ArgumentNullException(nameof(installedManifest));
             }
 
-            var processedPaths = new HashSet<string>(
+            if (installedManifest.ManifestVersion != 1
+                || installedManifest.Files == null)
+            {
+                throw new InvalidDataException(
+                    "기존 설치 Manifest가 올바르지 않습니다.");
+            }
+
+            var installRoot = NormalizeInstallRoot(installDirectory);
+            var plan = new RepairPlan();
+            var latestPaths = new HashSet<string>(
                 StringComparer.OrdinalIgnoreCase);
+
+            AddReplaceTargets(
+                installRoot,
+                latestFiles,
+                plan,
+                latestPaths);
+            AddDeleteTargets(
+                installRoot,
+                installedManifest.Files,
+                latestPaths,
+                plan);
+
+            return plan;
+        }
+
+        private void AddReplaceTargets(
+            string installRoot,
+            IEnumerable<UpdateManifestFile>? files,
+            RepairPlan plan,
+            ISet<string> processedPaths)
+        {
+            if (files == null)
+            {
+                return;
+            }
 
             foreach (var manifestFile in files)
             {
@@ -71,13 +117,12 @@ namespace POSCAM.UpdateClient.Services
 
                 if (!File.Exists(localPath))
                 {
-                    plan.Targets.Add(CreateTarget(
+                    plan.Targets.Add(CreateReplaceTarget(
                         manifestFile,
                         normalizedRelativePath,
                         localPath,
                         expectedSha256,
                         RepairReasons.Missing));
-
                     continue;
                 }
 
@@ -85,13 +130,12 @@ namespace POSCAM.UpdateClient.Services
 
                 if (fileInfo.Length != manifestFile.Size)
                 {
-                    plan.Targets.Add(CreateTarget(
+                    plan.Targets.Add(CreateReplaceTarget(
                         manifestFile,
                         normalizedRelativePath,
                         localPath,
                         expectedSha256,
                         RepairReasons.SizeMismatch));
-
                     continue;
                 }
 
@@ -103,7 +147,7 @@ namespace POSCAM.UpdateClient.Services
                     expectedSha256,
                     StringComparison.OrdinalIgnoreCase))
                 {
-                    plan.Targets.Add(CreateTarget(
+                    plan.Targets.Add(CreateReplaceTarget(
                         manifestFile,
                         normalizedRelativePath,
                         localPath,
@@ -111,8 +155,63 @@ namespace POSCAM.UpdateClient.Services
                         RepairReasons.HashMismatch));
                 }
             }
+        }
 
-            return plan;
+        private static void AddDeleteTargets(
+            string installRoot,
+            IEnumerable<InstalledManifestFile> installedFiles,
+            ISet<string> latestPaths,
+            RepairPlan plan)
+        {
+            var previousPaths = new HashSet<string>(
+                StringComparer.OrdinalIgnoreCase);
+
+            foreach (var installedFile in installedFiles)
+            {
+                if (installedFile == null)
+                {
+                    throw new InvalidDataException(
+                        "기존 설치 Manifest 파일 항목이 null입니다.");
+                }
+
+                if (installedFile.Size < 0)
+                {
+                    throw new InvalidDataException(
+                        "기존 설치 Manifest 파일 크기는 음수일 수 없습니다.");
+                }
+
+                NormalizeSha256(installedFile.Sha256);
+
+                string normalizedRelativePath;
+                var localPath = GetSafeLocalPath(
+                    installRoot,
+                    installedFile.Path,
+                    out normalizedRelativePath);
+
+                if (!previousPaths.Add(normalizedRelativePath))
+                {
+                    throw new InvalidDataException(
+                        "기존 설치 Manifest에 동일한 파일 경로가 중복되어 있습니다: "
+                        + normalizedRelativePath);
+                }
+
+                if (latestPaths.Contains(normalizedRelativePath)
+                    || !File.Exists(localPath))
+                {
+                    continue;
+                }
+
+                plan.Targets.Add(new RepairTarget
+                {
+                    Operation = UpdateTargetOperations.Delete,
+                    RelativePath = normalizedRelativePath,
+                    LocalPath = localPath,
+                    ExpectedSize = 0,
+                    ExpectedSha256 = "",
+                    DownloadUrl = "",
+                    Reason = RepairReasons.Removed
+                });
+            }
         }
 
         private static string NormalizeInstallRoot(string installDirectory)
@@ -147,6 +246,13 @@ namespace POSCAM.UpdateClient.Services
             {
                 throw new InvalidDataException(
                     "Manifest 파일 크기는 음수일 수 없습니다: "
+                    + manifestFile.Path);
+            }
+
+            if (string.IsNullOrWhiteSpace(manifestFile.DownloadUrl))
+            {
+                throw new InvalidDataException(
+                    "Manifest 파일 다운로드 URL이 비어 있습니다: "
                     + manifestFile.Path);
             }
 
@@ -329,7 +435,7 @@ namespace POSCAM.UpdateClient.Services
             return normalized.ToUpperInvariant();
         }
 
-        private static RepairTarget CreateTarget(
+        private static RepairTarget CreateReplaceTarget(
             UpdateManifestFile manifestFile,
             string relativePath,
             string localPath,
@@ -338,6 +444,7 @@ namespace POSCAM.UpdateClient.Services
         {
             return new RepairTarget
             {
+                Operation = UpdateTargetOperations.Replace,
                 RelativePath = relativePath,
                 LocalPath = localPath,
                 ExpectedSize = manifestFile.Size,
