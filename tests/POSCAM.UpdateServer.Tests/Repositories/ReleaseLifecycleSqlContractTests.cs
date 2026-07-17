@@ -5,14 +5,17 @@ namespace POSCAM.UpdateServer.Tests.Repositories;
 public class ReleaseLifecycleSqlContractTests
 {
     [Fact]
-    public void PublishSql_Draft에서만_Published와_UTC게시시각을_설정한다()
+    public void PublishSql_Draft또는Disabled에서_Published와_UTC게시시각을_설정한다()
     {
         var sql = Normalize(UpdateReleaseRepository.PublishSql);
 
         Assert.Contains("rel_status = @PublishedStatus", sql, StringComparison.OrdinalIgnoreCase);
         Assert.Contains("rel_published_at = UTC_TIMESTAMP()", sql, StringComparison.OrdinalIgnoreCase);
         Assert.Contains("rel_udate = UTC_TIMESTAMP()", sql, StringComparison.OrdinalIgnoreCase);
-        Assert.Contains("rel_status = @DraftStatus", sql, StringComparison.OrdinalIgnoreCase);
+        Assert.Contains(
+            "rel_status IN (@DraftStatus, @DisabledStatus)",
+            sql,
+            StringComparison.OrdinalIgnoreCase);
         Assert.DoesNotContain("update_artifacts", sql, StringComparison.OrdinalIgnoreCase);
     }
 

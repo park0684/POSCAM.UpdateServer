@@ -83,11 +83,12 @@ public sealed partial class ReleaseLifecycleService : IReleaseLifecycleService
                 return ReleaseNotFound<ReleaseLifecycleResponse>();
             }
 
-            if (current.ReleaseStatus != ReleaseStatus.Draft)
+            if (current.ReleaseStatus is not ReleaseStatus.Draft
+                and not ReleaseStatus.Disabled)
             {
                 await transaction.RollbackAsync(CancellationToken.None);
                 return InvalidReleaseState<ReleaseLifecycleResponse>(
-                    "Draft 상태의 릴리스만 게시할 수 있습니다.");
+                    "Draft 또는 Disabled 상태의 릴리스만 게시할 수 있습니다.");
             }
 
             var artifacts = await _artifactRepository.GetActiveByReleaseAsync(

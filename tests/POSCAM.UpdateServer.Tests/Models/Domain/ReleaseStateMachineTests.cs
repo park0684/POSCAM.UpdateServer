@@ -8,6 +8,7 @@ public class ReleaseStateMachineTests
     [Theory]
     [InlineData(ReleaseStatus.Draft, ReleaseStatus.Published)]
     [InlineData(ReleaseStatus.Published, ReleaseStatus.Disabled)]
+    [InlineData(ReleaseStatus.Disabled, ReleaseStatus.Published)]
     public void Evaluate_정방향_상태전이를_허용한다(
         ReleaseStatus currentStatus,
         ReleaseStatus nextStatus)
@@ -27,7 +28,6 @@ public class ReleaseStateMachineTests
     [InlineData(ReleaseStatus.Disabled, ReleaseStatus.Disabled, ReleaseTransitionError.SameStatus)]
     [InlineData(ReleaseStatus.Published, ReleaseStatus.Draft, ReleaseTransitionError.PublishedCannotReturnToDraft)]
     [InlineData(ReleaseStatus.Disabled, ReleaseStatus.Draft, ReleaseTransitionError.DisabledReleaseCannotTransition)]
-    [InlineData(ReleaseStatus.Disabled, ReleaseStatus.Published, ReleaseTransitionError.DisabledReleaseCannotTransition)]
     [InlineData(ReleaseStatus.Draft, ReleaseStatus.Disabled, ReleaseTransitionError.InvalidTransition)]
     public void Evaluate_허용되지_않은_상태전이를_거부한다(
         ReleaseStatus currentStatus,

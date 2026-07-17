@@ -10,7 +10,8 @@ public readonly record struct ReleaseTransitionResult(
     ReleaseTransitionError Error);
 
 /// <summary>
-/// 릴리스는 Draft → Published → Disabled 방향으로만 이동할 수 있다.
+/// 릴리스는 Draft → Published → Disabled로 이동하며,
+/// 배포 중지된 Disabled 릴리스는 검증 후 Published로 재게시할 수 있다.
 /// </summary>
 public static class ReleaseStateMachine
 {
@@ -35,6 +36,14 @@ public static class ReleaseStateMachine
 
         if (currentStatus == ReleaseStatus.Published
             && nextStatus == ReleaseStatus.Disabled)
+        {
+            return new ReleaseTransitionResult(
+                IsAllowed: true,
+                Error: ReleaseTransitionError.None);
+        }
+
+        if (currentStatus == ReleaseStatus.Disabled
+            && nextStatus == ReleaseStatus.Published)
         {
             return new ReleaseTransitionResult(
                 IsAllowed: true,

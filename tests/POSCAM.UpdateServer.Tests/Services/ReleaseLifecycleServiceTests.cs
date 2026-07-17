@@ -39,6 +39,28 @@ public class ReleaseLifecycleServiceTests
     }
 
     [Fact]
+    public async Task PublishAsync_Disabled를_재게시하고_감사를_기록한다()
+    {
+        var fixture = CreateFixture(ReleaseStatus.Disabled);
+        fixture.ArtifactRepository.Artifacts = new[] { CreateArtifact() };
+
+        var result = await fixture.Service.PublishAsync(10);
+
+        Assert.True(result.Success);
+        Assert.Equal(ReleaseStatus.Published, (ReleaseStatus)result.Data!.Status);
+        Assert.NotNull(result.Data.PublishedAt);
+        Assert.Equal(10L, fixture.ReleaseRepository.LastPublishedReleaseCode);
+        Assert.Single(fixture.Storage.ValidatedStorageKeys);
+
+        var audit = Assert.Single(fixture.AuditRepository.CreatedLogs);
+        Assert.Equal(AuditActions.Publish, audit.Action);
+        Assert.Equal(AuditTargetTypes.Release, audit.TargetType);
+        Assert.Contains("Disabled", audit.BeforeData ?? string.Empty, StringComparison.OrdinalIgnoreCase);
+        Assert.Contains("Published", audit.AfterData ?? string.Empty, StringComparison.OrdinalIgnoreCase);
+        Assert.True(fixture.DbContext.Connection.LastTransaction!.Committed);
+    }
+
+    [Fact]
     public async Task PublishAsync_활성Artifact가_없으면_409로_차단한다()
     {
         var fixture = CreateFixture(ReleaseStatus.Draft);
@@ -72,13 +94,10 @@ public class ReleaseLifecycleServiceTests
         Assert.True(fixture.DbContext.Connection.LastTransaction!.RolledBack);
     }
 
-    [Theory]
-    [InlineData(ReleaseStatus.Published)]
-    [InlineData(ReleaseStatus.Disabled)]
-    public async Task PublishAsync_Draft가_아니면_재게시를_차단한다(
-        ReleaseStatus status)
+    [Fact]
+    public async Task PublishAsync_Published는_재게시를_차단한다()
     {
-        var fixture = CreateFixture(status);
+        var fixture = CreateFixture(ReleaseStatus.Published);
         fixture.ArtifactRepository.Artifacts = new[] { CreateArtifact() };
 
         var result = await fixture.Service.PublishAsync(10);
