@@ -222,9 +222,26 @@ namespace POSCAM.UpdateClient.Services
                 options.InstallDirectory,
                 response.Files,
                 installedManifest);
-            var exitCode = incrementalPlan.HasRepairTargets
-                ? UpdateClientExitCodes.ApplyRequired
-                : UpdateClientExitCodes.Success;
+
+            if (!incrementalPlan.HasRepairTargets)
+            {
+                UpdateClientLog.Info(
+                    options.InstallDirectory,
+                    "StartupCheck.Decision",
+                    "Mode=FullPackage"
+                        + " Reason=NoIncrementalTargets"
+                        + " ManifestFiles=" + manifestCount
+                        + " ExitCode=10");
+
+                return new StartupCheckResult
+                {
+                    ExitCode = UpdateClientExitCodes.ApplyRequired,
+                    FullPackageUpdateRequired = true,
+                    IncrementalUpdateRequired = false,
+                    UpdateResponse = response,
+                    TargetManifest = targetManifest
+                };
+            }
 
             foreach (var target in incrementalPlan.Targets)
             {
@@ -241,11 +258,11 @@ namespace POSCAM.UpdateClient.Services
                 "StartupCheck.Decision",
                 "Mode=IncrementalUpdate ManifestFiles=" + manifestCount
                     + " Targets=" + incrementalPlan.Targets.Count
-                    + " ExitCode=" + exitCode);
+                    + " ExitCode=" + UpdateClientExitCodes.ApplyRequired);
 
             return new StartupCheckResult
             {
-                ExitCode = exitCode,
+                ExitCode = UpdateClientExitCodes.ApplyRequired,
                 FullPackageUpdateRequired = false,
                 IncrementalUpdateRequired = true,
                 UpdateResponse = response,
