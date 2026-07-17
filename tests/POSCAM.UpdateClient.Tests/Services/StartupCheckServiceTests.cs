@@ -1,4 +1,5 @@
 using System;
+using System.Collections.Generic;
 using System.IO;
 using System.Security.Cryptography;
 using System.Text;
@@ -323,7 +324,7 @@ namespace POSCAM.UpdateClient.Tests.Services
                     Architecture = "x86",
                     Version = version,
                     InstalledAtUtc = DateTime.UtcNow,
-                    Files = { files }
+                    Files = new List<InstalledManifestFile>(files)
                 });
         }
 
