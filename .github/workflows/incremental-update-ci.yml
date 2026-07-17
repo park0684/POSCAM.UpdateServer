@@ -1,0 +1,111 @@
+name: Incremental Update CI
+
+on:
+  push:
+    branches:
+      - agent/incremental-file-update
+  pull_request:
+    branches:
+      - feature/initial-update-server
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  build-and-test:
+    runs-on: windows-latest
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup .NET
+        uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: 8.0.x
+
+      - name: Restore
+        run: dotnet restore POSCAM.UpdateServer.sln
+
+      - name: Build
+        run: dotnet build POSCAM.UpdateServer.sln -c Release --no-restore
+
+      - name: Test
+        run: dotnet test POSCAM.UpdateServer.sln -c Release --no-build
+
+      - name: Verify UpdateClient output and production configuration
+        shell: pwsh
+        run: |
+          $outputDirectory = Join-Path $env:GITHUB_WORKSPACE "src\POSCAM.UpdateClient\bin\Release\net48"
+          $executable = Join-Path $outputDirectory "POSCAM.UpdateClient.exe"
+          $configuration = Join-Path $outputDirectory "POSCAM.UpdateClient.exe.config"
+          $jsonLibrary = Join-Path $outputDirectory "Newtonsoft.Json.dll"
+
+          if (-not (Test-Path $executable)) {
+            throw "POSCAM.UpdateClient.exe Release output was not created."
+          }
+
+          if (-not (Test-Path $configuration)) {
+            throw "POSCAM.UpdateClient.exe.config was not created."
+          }
+
+          if (-not (Test-Path $jsonLibrary)) {
+            throw "Newtonsoft.Json.dll was not copied to the UpdateClient output."
+          }
+
+          [xml]$configXml = Get-Content -LiteralPath $configuration -Raw
+          $serverSetting = $configXml.configuration.appSettings.add |
+            Where-Object { $_.key -eq "UpdateServerBaseUrl" } |
+            Select-Object -First 1
+
+          if ($null -eq $serverSetting) {
+            throw "UpdateServerBaseUrl setting was not found in UpdateClient configuration."
+          }
+
+          if ($serverSetting.value -ne "https://update.poscam.co.kr") {
+            throw "UpdateClient artifact must retain the production server URL. Actual=$($serverSetting.value)"
+          }
+
+          $fileDescription = (Get-Item -LiteralPath $executable).VersionInfo.FileDescription
+          Write-Host "Verified UpdateClient output: $outputDirectory"
+          Write-Host "Configured server: $($serverSetting.value)"
+          Write-Host "FileDescription: $fileDescription"
+
+      - name: Create UpdateClient package
+        shell: pwsh
+        run: |
+          $source = Join-Path $env:GITHUB_WORKSPACE "src\POSCAM.UpdateClient\bin\Release\net48"
+          $package = Join-Path $env:GITHUB_WORKSPACE "artifacts\POSCAM.UpdateClient-win-net48"
+
+          New-Item -ItemType Directory -Path $package -Force | Out-Null
+
+          Get-ChildItem -Path $source -File | ForEach-Object {
+            Copy-Item -Path $_.FullName -Destination $package -Force
+          }
+
+          @(
+            "ProductCode=PCCAM/CAMVIEWER/UPDATER runtime client",
+            "RuntimeArchitecture=x86",
+            "TargetProductArchitecture=command-line argument",
+            "TargetFramework=net48",
+            "DefaultUpdateServerBaseUrl=https://update.poscam.co.kr",
+            "SourceBranch=${{ github.head_ref || github.ref_name }}",
+            "SourceCommit=${{ github.sha }}"
+          ) | Set-Content -Path (Join-Path $package "build-info.txt") -Encoding UTF8
+
+          Get-ChildItem -Path $package -File |
+            Where-Object { $_.Name -ne "SHA256SUMS.txt" } |
+            Sort-Object Name |
+            ForEach-Object {
+              $hash = Get-FileHash -LiteralPath $_.FullName -Algorithm SHA256
+              "$($hash.Hash.ToLowerInvariant())  $($_.Name)"
+            } | Set-Content -Path (Join-Path $package "SHA256SUMS.txt") -Encoding ASCII
+
+      - name: Upload UpdateClient package
+        uses: actions/upload-artifact@v4
+        with:
+          name: POSCAM.UpdateClient-win-net48
+          path: artifacts/POSCAM.UpdateClient-win-net48
+          if-no-files-found: error
+          retention-days: 14

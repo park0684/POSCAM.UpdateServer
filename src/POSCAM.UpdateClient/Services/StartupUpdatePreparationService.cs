@@ -1,0 +1,493 @@
+using System;
+using System.IO;
+using System.Threading;
+using System.Threading.Tasks;
+using POSCAM.UpdateClient.Models;
+
+namespace POSCAM.UpdateClient.Services
+{
+    /// <summary>
+    /// startup-check 판정 결과에 따라 파일을 다운로드하고 적용 계획을 저장한다.
+    /// 원본 프로그램 파일은 변경하지 않는다.
+    /// </summary>
+    internal sealed class StartupUpdatePreparationService
+    {
+        private readonly IUpdateFileDownloadService _downloadService;
+        private readonly UpdateWorkPathService _workPathService;
+        private readonly UpdateApplyPlanStore _planStore;
+        private readonly InstalledManifestStore _installedManifestStore;
+
+        public StartupUpdatePreparationService(
+            IUpdateFileDownloadService downloadService,
+            UpdateWorkPathService workPathService,
+            UpdateApplyPlanStore planStore)
+            : this(
+                downloadService,
+                workPathService,
+                planStore,
+                new InstalledManifestStore())
+        {
+        }
+
+        internal StartupUpdatePreparationService(
+            IUpdateFileDownloadService downloadService,
+            UpdateWorkPathService workPathService,
+            UpdateApplyPlanStore planStore,
+            InstalledManifestStore installedManifestStore)
+        {
+            _downloadService = downloadService
+                ?? throw new ArgumentNullException(nameof(downloadService));
+            _workPathService = workPathService
+                ?? throw new ArgumentNullException(nameof(workPathService));
+            _planStore = planStore
+                ?? throw new ArgumentNullException(nameof(planStore));
+            _installedManifestStore = installedManifestStore
+                ?? throw new ArgumentNullException(
+                    nameof(installedManifestStore));
+        }
+
+        public async Task<int> PrepareAsync(
+            StartupCheckOptions options,
+            StartupCheckResult checkResult,
+            CancellationToken cancellationToken)
+        {
+            if (options == null)
+            {
+                throw new ArgumentNullException(nameof(options));
+            }
+
+            if (checkResult == null)
+            {
+                throw new ArgumentNullException(nameof(checkResult));
+            }
+
+            UpdateWorkPaths paths;
+
+            try
+            {
+                paths = _workPathService.Create(
+                    options.InstallDirectory);
+                _planStore.Delete(paths.ActivePlanPath);
+            }
+            catch (Exception exception)
+                when (exception is ArgumentException
+                    || exception is InvalidDataException
+                    || exception is NotSupportedException
+                    || exception is PathTooLongException)
+            {
+                UpdateClientLog.Error(
+                    options.InstallDirectory,
+                    "Preparation.PathFailed",
+                    "업데이트 작업 경로를 검증하지 못했습니다. ExitCode=20",
+                    exception);
+                return UpdateClientExitCodes.VerificationFailed;
+            }
+            catch (Exception exception)
+                when (exception is IOException
+                    || exception is UnauthorizedAccessException)
+            {
+                UpdateClientLog.Error(
+                    options.InstallDirectory,
+                    "Preparation.PathWriteFailed",
+                    "업데이트 작업 경로를 준비하지 못했습니다. ExitCode=40",
+                    exception);
+                return UpdateClientExitCodes.DownloadFailed;
+            }
+
+            if (checkResult.ExitCode
+                != UpdateClientExitCodes.ApplyRequired)
+            {
+                if (checkResult.ExitCode == UpdateClientExitCodes.Success
+                    && checkResult.TargetManifest != null)
+                {
+                    try
+                    {
+                        _installedManifestStore.Save(
+                            paths.InstallDirectory,
+                            checkResult.TargetManifest);
+                        _installedManifestStore.ClearFullPackageFallback(
+                            paths.InstallDirectory);
+                    }
+                    catch (Exception exception)
+                        when (exception is ArgumentException
+                            || exception is InvalidDataException
+                            || exception is IOException
+                            || exception is UnauthorizedAccessException
+                            || exception is NotSupportedException
+                            || exception is PathTooLongException)
+                    {
+                        UpdateClientLog.Error(
+                            paths.InstallDirectory,
+                            "Preparation.ManifestSaveFailed",
+                            "설치 Manifest를 저장하지 못했습니다. ExitCode=40",
+                            exception);
+                        return UpdateClientExitCodes.DownloadFailed;
+                    }
+                }
+
+                UpdateClientLog.Info(
+                    paths.InstallDirectory,
+                    "Preparation.Skipped",
+                    "ExitCode=" + checkResult.ExitCode);
+                return checkResult.ExitCode;
+            }
+
+            try
+            {
+                var applicationFileName = _workPathService
+                    .ValidateFileName(options.ApplicationFileName);
+
+                if (!UpdateProductIdentity.TryNormalize(
+                    options.ProductCode,
+                    options.Architecture,
+                    out var productCode,
+                    out var architecture))
+                {
+                    throw new InvalidDataException(
+                        "업데이트 제품 또는 아키텍처 정보가 올바르지 않습니다.");
+                }
+
+                Directory.CreateDirectory(paths.JobDirectory);
+
+                var plan = new UpdateApplyPlan
+                {
+                    JobId = paths.JobId,
+                    ProductCode = productCode,
+                    Architecture = architecture,
+                    InstallDirectory = paths.InstallDirectory,
+                    ApplicationFileName = applicationFileName,
+                    CreatedAtUtc = DateTime.UtcNow,
+                    LatestVersion = checkResult.UpdateResponse?.LatestVersion,
+                    TargetManifest = checkResult.TargetManifest
+                };
+
+                if (checkResult.FullPackageUpdateRequired)
+                {
+                    await PrepareFullPackageAsync(
+                        paths,
+                        checkResult,
+                        plan,
+                        cancellationToken)
+                        .ConfigureAwait(false);
+                }
+                else
+                {
+                    try
+                    {
+                        await PrepareFileTargetsAsync(
+                            paths,
+                            checkResult,
+                            plan,
+                            cancellationToken)
+                            .ConfigureAwait(false);
+                    }
+                    catch (Exception exception)
+                        when (checkResult.IncrementalUpdateRequired
+                            && IsIncrementalFallbackException(exception))
+                    {
+                        UpdateClientLog.Error(
+                            paths.InstallDirectory,
+                            "Preparation.IncrementalFallback",
+                            "증분 업데이트 준비에 실패하여 Full Package 다운로드로 전환합니다.",
+                            exception);
+
+                        ResetJobDirectory(paths);
+                        plan.Targets.Clear();
+                        plan.Mode = "";
+
+                        await PrepareFullPackageAsync(
+                            paths,
+                            checkResult,
+                            plan,
+                            cancellationToken)
+                            .ConfigureAwait(false);
+                    }
+                }
+
+                _planStore.Save(paths.ActivePlanPath, plan);
+
+                UpdateClientLog.Info(
+                    paths.InstallDirectory,
+                    "Preparation.PlanSaved",
+                    "JobId=" + paths.JobId
+                        + " Product=" + plan.ProductCode
+                        + " Architecture=" + plan.Architecture
+                        + " Mode=" + plan.Mode
+                        + " Targets=" + plan.Targets.Count
+                        + " ExitCode=10");
+
+                return UpdateClientExitCodes.ApplyRequired;
+            }
+            catch (OperationCanceledException)
+                when (cancellationToken.IsCancellationRequested)
+            {
+                UpdateClientLog.Error(
+                    paths.InstallDirectory,
+                    "Preparation.Canceled",
+                    "업데이트 준비가 취소되었습니다.");
+                CleanupFailedJob(paths);
+                throw;
+            }
+            catch (Exception exception)
+                when (exception is ArgumentException
+                    || exception is InvalidDataException
+                    || exception is NotSupportedException
+                    || exception is PathTooLongException)
+            {
+                UpdateClientLog.Error(
+                    paths.InstallDirectory,
+                    "Preparation.VerificationFailed",
+                    "업데이트 준비 검증에 실패했습니다. ExitCode=20",
+                    exception);
+                CleanupFailedJob(paths);
+                return UpdateClientExitCodes.VerificationFailed;
+            }
+            catch (Exception exception)
+                when (exception is UpdateDownloadException
+                    || exception is IOException
+                    || exception is UnauthorizedAccessException)
+            {
+                UpdateClientLog.Error(
+                    paths.InstallDirectory,
+                    "Preparation.DownloadFailed",
+                    "업데이트 파일 다운로드 또는 저장에 실패했습니다. ExitCode=40",
+                    exception);
+                CleanupFailedJob(paths);
+                return UpdateClientExitCodes.DownloadFailed;
+            }
+        }
+
+        private async Task PrepareFullPackageAsync(
+            UpdateWorkPaths paths,
+            StartupCheckResult checkResult,
+            UpdateApplyPlan plan,
+            CancellationToken cancellationToken)
+        {
+            var response = checkResult.UpdateResponse;
+
+            if (response == null)
+            {
+                throw new InvalidDataException(
+                    "Full Package 업데이트 응답이 없습니다.");
+            }
+
+            var packageUrl = response.PackageUrl == null
+                ? null
+                : response.PackageUrl.Trim();
+            var fileName = response.FileName == null
+                ? null
+                : response.FileName.Trim();
+            var sha256 = response.Sha256 == null
+                ? null
+                : response.Sha256.Trim();
+            var fileSize = response.FileSize;
+            var packageType = response.PackageType == null
+                ? null
+                : response.PackageType.Trim();
+
+            if (packageUrl == null
+                || packageUrl.Length == 0
+                || fileName == null
+                || fileName.Length == 0
+                || !fileSize.HasValue
+                || fileSize.Value < 0
+                || sha256 == null
+                || sha256.Length == 0)
+            {
+                throw new InvalidDataException(
+                    "Full Package 업데이트 정보가 올바르지 않습니다.");
+            }
+
+            var packageFileName = _workPathService
+                .ValidateFileName(fileName);
+            var relativeDownloadPath = "package/" + packageFileName;
+            var destinationPath = _workPathService.ResolveJobFilePath(
+                paths.JobDirectory,
+                relativeDownloadPath);
+            var expectedSha256 = sha256.ToUpperInvariant();
+
+            UpdateClientLog.Info(
+                paths.InstallDirectory,
+                "Download.Begin",
+                "Mode=FullPackage File=" + packageFileName
+                    + " Size=" + fileSize.Value);
+
+            var downloadedPath = await _downloadService
+                .DownloadAndVerifyAsync(
+                    new UpdateFileDownloadRequest
+                    {
+                        DownloadUrl = packageUrl,
+                        DestinationPath = destinationPath,
+                        ExpectedSize = fileSize.Value,
+                        ExpectedSha256 = expectedSha256
+                    },
+                    cancellationToken)
+                .ConfigureAwait(false);
+
+            plan.Mode = UpdateApplyModes.FullPackage;
+            plan.PackageType = packageType;
+            plan.PackageFileName = packageFileName;
+            plan.PackagePath = downloadedPath;
+            plan.PackageSize = fileSize.Value;
+            plan.PackageSha256 = expectedSha256;
+
+            UpdateClientLog.Info(
+                paths.InstallDirectory,
+                "Download.Success",
+                "Mode=FullPackage File=" + packageFileName
+                    + " Size=" + fileSize.Value);
+        }
+
+        private async Task PrepareFileTargetsAsync(
+            UpdateWorkPaths paths,
+            StartupCheckResult checkResult,
+            UpdateApplyPlan plan,
+            CancellationToken cancellationToken)
+        {
+            var repairTargets = checkResult.RepairPlan?.Targets;
+
+            if (repairTargets == null || repairTargets.Count == 0)
+            {
+                throw new InvalidDataException(
+                    "파일 업데이트 대상이 없습니다.");
+            }
+
+            plan.Mode = checkResult.IncrementalUpdateRequired
+                ? UpdateApplyModes.IncrementalUpdate
+                : UpdateApplyModes.FileRepair;
+
+            foreach (var target in repairTargets)
+            {
+                if (target == null
+                    || string.IsNullOrWhiteSpace(target.RelativePath))
+                {
+                    throw new InvalidDataException(
+                        "파일 업데이트 대상 정보가 올바르지 않습니다.");
+                }
+
+                var operation = string.IsNullOrWhiteSpace(target.Operation)
+                    ? UpdateTargetOperations.Replace
+                    : target.Operation.Trim();
+
+                if (string.Equals(
+                    operation,
+                    UpdateTargetOperations.Delete,
+                    StringComparison.Ordinal))
+                {
+                    plan.Targets.Add(new UpdateApplyTarget
+                    {
+                        Operation = UpdateTargetOperations.Delete,
+                        RelativePath = target.RelativePath,
+                        DownloadedPath = "",
+                        ExpectedSize = 0,
+                        ExpectedSha256 = "",
+                        Reason = target.Reason
+                    });
+                    continue;
+                }
+
+                if (!string.Equals(
+                        operation,
+                        UpdateTargetOperations.Replace,
+                        StringComparison.Ordinal)
+                    || string.IsNullOrWhiteSpace(target.ExpectedSha256)
+                    || string.IsNullOrWhiteSpace(target.DownloadUrl))
+                {
+                    throw new InvalidDataException(
+                        "파일 교체 대상 정보가 올바르지 않습니다.");
+                }
+
+                var relativeDownloadPath = "files/"
+                    + target.RelativePath.Replace('\\', '/');
+                var destinationPath = _workPathService.ResolveJobFilePath(
+                    paths.JobDirectory,
+                    relativeDownloadPath);
+                var expectedSha256 = target.ExpectedSha256
+                    .Trim()
+                    .ToUpperInvariant();
+
+                UpdateClientLog.Info(
+                    paths.InstallDirectory,
+                    "Download.Begin",
+                    "Mode=" + plan.Mode
+                        + " Path=" + target.RelativePath
+                        + " Size=" + target.ExpectedSize);
+
+                var downloadedPath = await _downloadService
+                    .DownloadAndVerifyAsync(
+                    new UpdateFileDownloadRequest
+                    {
+                        DownloadUrl = target.DownloadUrl,
+                        DestinationPath = destinationPath,
+                        ExpectedSize = target.ExpectedSize,
+                        ExpectedSha256 = expectedSha256
+                    },
+                    cancellationToken)
+                    .ConfigureAwait(false);
+
+                plan.Targets.Add(new UpdateApplyTarget
+                {
+                    Operation = UpdateTargetOperations.Replace,
+                    RelativePath = target.RelativePath,
+                    DownloadedPath = downloadedPath,
+                    ExpectedSize = target.ExpectedSize,
+                    ExpectedSha256 = expectedSha256,
+                    Reason = target.Reason
+                });
+
+                UpdateClientLog.Info(
+                    paths.InstallDirectory,
+                    "Download.Success",
+                    "Mode=" + plan.Mode
+                        + " Path=" + target.RelativePath
+                        + " Size=" + target.ExpectedSize);
+            }
+        }
+
+        private static bool IsIncrementalFallbackException(
+            Exception exception)
+        {
+            return exception is UpdateDownloadException
+                || exception is IOException
+                || exception is UnauthorizedAccessException
+                || exception is ArgumentException
+                || exception is InvalidDataException
+                || exception is NotSupportedException
+                || exception is PathTooLongException;
+        }
+
+        private static void ResetJobDirectory(UpdateWorkPaths paths)
+        {
+            if (Directory.Exists(paths.JobDirectory))
+            {
+                Directory.Delete(paths.JobDirectory, true);
+            }
+
+            Directory.CreateDirectory(paths.JobDirectory);
+        }
+
+        private void CleanupFailedJob(UpdateWorkPaths paths)
+        {
+            try
+            {
+                _planStore.Delete(paths.ActivePlanPath);
+            }
+            catch
+            {
+                // 실패 정리 중 예외가 원래 종료 코드를 덮어쓰지 않도록 한다.
+            }
+
+            try
+            {
+                if (Directory.Exists(paths.JobDirectory))
+                {
+                    Directory.Delete(paths.JobDirectory, true);
+                }
+            }
+            catch
+            {
+                // 실패 작업 폴더 정리는 후속 로그/정리 단계에서 재시도한다.
+            }
+        }
+    }
+}

@@ -37,8 +37,19 @@ Content-Type: application/json
 - sha256
 - releaseNotes
 - publishedAt
+- files
+
+`files[]`는 동일 버전 파일 복구 판단을 위한 Manifest이다. 서버는 클라이언트 로컬 파일 상태를 직접 알 수 없으므로 `updateAvailable=false`, `reasonCode=ALREADY_LATEST`인 경우에도 compatible Artifact가 있으면 `files[]`를 내려줄 수 있다. 클라이언트는 `files[].path`, `files[].size`, `files[].sha256`을 기준으로 로컬 파일을 검사하고, 누락 또는 SHA-256 불일치 파일만 `files[].downloadUrl`로 복구한다.
+
+`files[]` 항목:
+- path
+- size
+- sha256
+- required
+- downloadUrl
 
 ## 관리자 경로
+
 ```text
 GET    /api/v1/admin/products/active
 GET    /api/v1/admin/releases
@@ -49,13 +60,53 @@ DELETE /api/v1/admin/releases/{releaseCode}
 POST   /api/v1/admin/releases/{releaseCode}/artifacts
 POST   /api/v1/admin/releases/{releaseCode}/publish
 POST   /api/v1/admin/releases/{releaseCode}/disable
+POST   /api/v1/admin/artifacts/{artifactCode}/quarantine
 GET    /api/v1/admin/audit-logs
 GET    /api/v1/admin/releases/{releaseCode}/audit-logs
 ```
 
 Artifact multipart 필드: `os`, `architecture`, `packageType`, `file`.
 
+Artifact 업로드 응답 Data:
+- artifactCode
+- releaseCode
+- publicId
+- os
+- architecture
+- packageType
+- fileName
+- fileSize
+- sha256
+- manifestFileCount
+- replaced
+
+`manifestFileCount`는 ZIP 업로드 시 생성·저장된 파일별 복구 Manifest 대상 파일 수이다.
+
+### 상태 작업
+
+- Publish: Draft → Published. 게시 직전 활성 Artifact의 파일 존재, 크기, SHA-256, ZIP을 재검증한다.
+- Disable: Published → Disabled. 일반 배포 중지는 Artifact 상태와 package 파일을 변경하지 않는다.
+- Quarantine: Published 또는 Disabled Release의 Artifact를 Disabled로 바꾸고 package 파일을 `.quarantine`으로 이동한다. Published Release는 함께 Disabled로 전환한다.
+- Published → Draft와 Disabled → Published는 허용하지 않는다.
+
+### 감사 필터
+
+`GET /api/v1/admin/audit-logs` Query:
+
+- `action`
+- `targetType`
+- `targetCode`
+- `actorUserCode`
+- `requestId`
+- `fromUtc`
+- `toUtc`
+- `page`
+- `pageSize`
+
+`GET /api/v1/admin/releases/{releaseCode}/audit-logs`는 해당 Release 작업과 현재 연결된 Artifact 작업을 함께 반환한다. `action`, `page`, `pageSize`를 지원한다.
+
 페이징:
+
 ```json
 {"items":[],"page":1,"pageSize":20,"totalCount":0,"totalPages":0}
 ```

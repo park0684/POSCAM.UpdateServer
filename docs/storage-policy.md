@@ -16,3 +16,6 @@
 - DB 실패 시 파일 제거 또는 quarantine
 - 게시 직전 파일 존재·크기·SHA-256·ZIP 재검증
 - Published 파일 불변
+- 일반 Release Disable은 package 파일을 삭제하거나 이동하지 않음
+- 긴급 Artifact 격리는 package 파일을 `.quarantine`으로 이동하여 기존 URL을 차단
+- 긴급 격리의 DB 반영이 실패하면 파일을 원래 packages 위치로 복구

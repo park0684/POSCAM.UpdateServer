@@ -3,9 +3,15 @@ services:
     image: poscam-update-server:${POSCAM_UPDATE_IMAGE_TAG}
     container_name: poscam-update-api
     restart: unless-stopped
+    read_only: true
+    security_opt:
+      - no-new-privileges:true
+    tmpfs:
+      - /tmp:size=64m,mode=1777
     environment:
       ASPNETCORE_ENVIRONMENT: Production
       ASPNETCORE_URLS: http://+:8080
+      AllowedHosts: update.poscam.co.kr
       ConnectionStrings__DefaultConnection: ${UPDATE_DB_CONNECTION}
       UpdateStorage__RootPath: /app/update-storage
       UpdateStorage__PublicBaseUrl: https://update.poscam.co.kr
@@ -14,7 +20,11 @@ services:
       UpdateStorage__MaxExpandedBytes: 4294967296
       AuthServer__BaseUrl: http://poscam-auth-api:8080
       AuthServer__InternalServiceKey: ${UPDATE_INTERNAL_SERVICE_KEY}
+      AuthServer__TimeoutSeconds: 5
       Cors__AdminWebOrigins__0: https://accli.poscam.co.kr
+      ForwardedHeaders__KnownProxies__0: ${UPDATE_NGINX_PROXY_IP}
+      ForwardedHeaders__KnownProxies__1: ${UPDATE_IIS_PROXY_IP}
+      ForwardedHeaders__ForwardLimit: 2
       RateLimiting__UpdateCheckPermitLimit: 60
       RateLimiting__UpdateCheckWindowSeconds: 60
     ports:
