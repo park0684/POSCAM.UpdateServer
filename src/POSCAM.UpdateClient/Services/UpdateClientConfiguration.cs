@@ -33,7 +33,7 @@ namespace POSCAM.UpdateClient.Services
                 return true;
             }
 
-            var candidate = configuredValue.Trim().TrimEnd('/');
+            var candidate = configuredValue!.Trim().TrimEnd('/');
 
             if (!Uri.TryCreate(candidate, UriKind.Absolute, out var uri)
                 || (!string.Equals(
