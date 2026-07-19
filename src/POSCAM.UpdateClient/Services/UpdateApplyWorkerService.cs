@@ -17,6 +17,7 @@ namespace POSCAM.UpdateClient.Services
         private readonly FullPackageApplyService _fullPackageApplyService;
         private readonly IApplicationRestartService _restartService;
         private readonly InstalledManifestStore _installedManifestStore;
+        private readonly UpdateWorkCleanupService _cleanupService;
 
         public UpdateApplyWorkerService(
             UpdateApplyPlanStore planStore,
@@ -55,6 +56,9 @@ namespace POSCAM.UpdateClient.Services
             _installedManifestStore = installedManifestStore
                 ?? throw new ArgumentNullException(
                     nameof(installedManifestStore));
+            _cleanupService = new UpdateWorkCleanupService(
+                _pathService,
+                _planStore);
         }
 
         public async Task<int> ApplyAsync(
@@ -92,8 +96,6 @@ namespace POSCAM.UpdateClient.Services
                 }
 
                 recoveryHandled = true;
-                var previousManifest = _installedManifestStore.Load(
-                    plan.InstallDirectory);
                 var previousFallbackRequested = _installedManifestStore
                     .IsFullPackageFallbackRequested(
                         plan.InstallDirectory);
@@ -103,14 +105,25 @@ namespace POSCAM.UpdateClient.Services
                     () => CommitAppliedState(plan),
                     () => RestoreAppliedState(
                         plan.InstallDirectory,
-                        previousManifest,
                         previousFallbackRequested),
                     () => _restartService.Restart(
                         plan.InstallDirectory,
-                        plan.ApplicationFileName),
+                        plan.ApplicationFileName,
+                        false),
+                    () => _restartService.Restart(
+                        plan.InstallDirectory,
+                        plan.ApplicationFileName,
+                        true),
+                    () => _cleanupService.CleanupCompletedJob(
+                        plan,
+                        planPath,
+                        true),
                     cancellationToken);
 
-                _planStore.Delete(planPath);
+                _cleanupService.CleanupCompletedJob(
+                    plan,
+                    planPath,
+                    true);
                 return UpdateClientExitCodes.Success;
             }
             catch (OperationCanceledException)
@@ -144,33 +157,14 @@ namespace POSCAM.UpdateClient.Services
 
         private void CommitAppliedState(UpdateApplyPlan plan)
         {
-            if (plan.TargetManifest != null)
-            {
-                _installedManifestStore.Save(
-                    plan.InstallDirectory,
-                    plan.TargetManifest);
-            }
-
             _installedManifestStore.ClearFullPackageFallback(
                 plan.InstallDirectory);
         }
 
         private void RestoreAppliedState(
             string installDirectory,
-            InstalledManifest? previousManifest,
             bool previousFallbackRequested)
         {
-            if (previousManifest == null)
-            {
-                _installedManifestStore.Delete(installDirectory);
-            }
-            else
-            {
-                _installedManifestStore.Save(
-                    installDirectory,
-                    previousManifest);
-            }
-
             if (previousFallbackRequested)
             {
                 _installedManifestStore.RequestFullPackageFallback(
@@ -192,13 +186,14 @@ namespace POSCAM.UpdateClient.Services
             {
                 _restartService.Restart(
                     plan.InstallDirectory,
-                    plan.ApplicationFileName);
+                    plan.ApplicationFileName,
+                    true);
 
                 UpdateClientLog.Info(
                     plan.InstallDirectory,
                     "apply-worker.prechange.restart.success",
                     failureMessage
-                        + " 파일을 변경하지 않고 기존 프로그램을 다시 실행했습니다.");
+                        + " 파일을 변경하지 않고 기존 프로그램을 업데이트 확인 없이 한 번 다시 실행했습니다.");
             }
             catch (Exception restartException)
             {
@@ -256,12 +251,13 @@ namespace POSCAM.UpdateClient.Services
             {
                 _restartService.Restart(
                     installDirectory,
-                    applicationFileName);
+                    applicationFileName,
+                    true);
 
                 UpdateClientLog.Info(
                     installDirectory,
                     "apply-worker.prechange.restart.success",
-                    "파일 변경 전에 worker 검증이 실패하여 기존 프로그램을 다시 실행했습니다.");
+                    "파일 변경 전에 worker 검증이 실패하여 기존 프로그램을 업데이트 확인 없이 한 번 다시 실행했습니다.");
             }
             catch (Exception restartException)
             {

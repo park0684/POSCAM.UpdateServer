@@ -46,6 +46,42 @@ namespace POSCAM.UpdateClient.Services
             Action restartAction,
             CancellationToken cancellationToken)
         {
+            ApplyAndRestart(
+                plan,
+                commitStateAction,
+                rollbackStateAction,
+                restartAction,
+                () => { },
+                cancellationToken);
+        }
+
+        public void ApplyAndRestart(
+            UpdateApplyPlan plan,
+            Action commitStateAction,
+            Action rollbackStateAction,
+            Action restartAction,
+            Action recoveryCompletedAction,
+            CancellationToken cancellationToken)
+        {
+            ApplyAndRestart(
+                plan,
+                commitStateAction,
+                rollbackStateAction,
+                restartAction,
+                restartAction,
+                recoveryCompletedAction,
+                cancellationToken);
+        }
+
+        public void ApplyAndRestart(
+            UpdateApplyPlan plan,
+            Action commitStateAction,
+            Action rollbackStateAction,
+            Action successRestartAction,
+            Action recoveryRestartAction,
+            Action recoveryCompletedAction,
+            CancellationToken cancellationToken)
+        {
             if (plan == null)
             {
                 throw new ArgumentNullException(nameof(plan));
@@ -61,9 +97,22 @@ namespace POSCAM.UpdateClient.Services
                 throw new ArgumentNullException(nameof(rollbackStateAction));
             }
 
-            if (restartAction == null)
+            if (successRestartAction == null)
             {
-                throw new ArgumentNullException(nameof(restartAction));
+                throw new ArgumentNullException(
+                    nameof(successRestartAction));
+            }
+
+            if (recoveryRestartAction == null)
+            {
+                throw new ArgumentNullException(
+                    nameof(recoveryRestartAction));
+            }
+
+            if (recoveryCompletedAction == null)
+            {
+                throw new ArgumentNullException(
+                    nameof(recoveryCompletedAction));
             }
 
             var applied = new List<ApplyOperation>();
@@ -80,7 +129,7 @@ namespace POSCAM.UpdateClient.Services
 
                 cancellationToken.ThrowIfCancellationRequested();
                 commitStateAction();
-                restartAction();
+                successRestartAction();
             }
             catch (Exception applyException)
             {
@@ -88,7 +137,8 @@ namespace POSCAM.UpdateClient.Services
                     plan.InstallDirectory,
                     applied,
                     rollbackStateAction,
-                    restartAction,
+                    recoveryRestartAction,
+                    recoveryCompletedAction,
                     applyException);
                 throw;
             }
@@ -336,6 +386,7 @@ namespace POSCAM.UpdateClient.Services
             IList<ApplyOperation> applied,
             Action rollbackStateAction,
             Action restartAction,
+            Action recoveryCompletedAction,
             Exception applyException)
         {
             var hadAppliedChanges = applied.Count > 0;
@@ -379,6 +430,10 @@ namespace POSCAM.UpdateClient.Services
                         ? "apply.rollback.restart.success"
                         : "apply.prechange.restart.success",
                     "현재 설치된 기존 프로그램을 다시 실행했습니다.");
+
+                InvokeRecoveryCompletedAction(
+                    installDirectory,
+                    recoveryCompletedAction);
             }
             catch (Exception restartException)
             {
@@ -393,6 +448,24 @@ namespace POSCAM.UpdateClient.Services
                     new AggregateException(
                         applyException,
                         restartException));
+            }
+        }
+
+        private static void InvokeRecoveryCompletedAction(
+            string installDirectory,
+            Action recoveryCompletedAction)
+        {
+            try
+            {
+                recoveryCompletedAction();
+            }
+            catch (Exception exception)
+            {
+                UpdateClientLog.Error(
+                    installDirectory,
+                    "apply.recovery.cleanup.failed",
+                    "Full Package Rollback과 기존 프로그램 재실행은 완료했지만 작업 폴더 정리에 실패했습니다.",
+                    exception);
             }
         }
 

@@ -1,0 +1,35 @@
+<Project>
+
+  <ItemGroup>
+    <ProjectReference Include="..\POSCAM.UpdateClient.ProcessHost\POSCAM.UpdateClient.ProcessHost.csproj" />
+
+    <None Update="xunit.runner.json">
+      <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
+    </None>
+  </ItemGroup>
+
+  <PropertyGroup>
+    <UpdateClientRuntimeSourceDirectory>$([System.IO.Path]::GetFullPath('$(MSBuildThisFileDirectory)..\..\src\POSCAM.UpdateClient\bin\$(Configuration)\$(TargetFramework)'))\</UpdateClientRuntimeSourceDirectory>
+  </PropertyGroup>
+
+  <Target Name="PrepareUpdateClientProcessIntegrationRuntime"
+          AfterTargets="Build">
+    <Error Condition="!Exists('$(UpdateClientRuntimeSourceDirectory)POSCAM.UpdateClient.exe')"
+           Text="프로세스 통합 테스트용 POSCAM.UpdateClient.exe를 찾을 수 없습니다: $(UpdateClientRuntimeSourceDirectory)POSCAM.UpdateClient.exe" />
+    <Error Condition="!Exists('$(UpdateClientRuntimeSourceDirectory)POSCAM.UpdateClient.exe.config')"
+           Text="프로세스 통합 테스트용 POSCAM.UpdateClient.exe.config를 찾을 수 없습니다: $(UpdateClientRuntimeSourceDirectory)POSCAM.UpdateClient.exe.config" />
+    <Error Condition="!Exists('$(UpdateClientRuntimeSourceDirectory)Newtonsoft.Json.dll')"
+           Text="프로세스 통합 테스트용 Newtonsoft.Json.dll을 찾을 수 없습니다: $(UpdateClientRuntimeSourceDirectory)Newtonsoft.Json.dll" />
+
+    <ItemGroup>
+      <UpdateClientProcessRuntimeFile Include="$(UpdateClientRuntimeSourceDirectory)POSCAM.UpdateClient.exe" />
+      <UpdateClientProcessRuntimeFile Include="$(UpdateClientRuntimeSourceDirectory)POSCAM.UpdateClient.exe.config" />
+      <UpdateClientProcessRuntimeFile Include="$(UpdateClientRuntimeSourceDirectory)Newtonsoft.Json.dll" />
+    </ItemGroup>
+
+    <Copy SourceFiles="@(UpdateClientProcessRuntimeFile)"
+          DestinationFolder="$(TargetDir)"
+          SkipUnchangedFiles="true" />
+  </Target>
+
+</Project>

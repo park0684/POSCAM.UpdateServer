@@ -6,7 +6,7 @@ using System.Text;
 namespace POSCAM.UpdateClient.Services
 {
     /// <summary>
-    /// UI 없는 UpdateClient의 최소 운영 로그를 설치 루트 아래에 기록한다.
+    /// UI 없는 UpdateClient의 최소 운영 로그를 설치 루트의 logs 폴더에 기록한다.
     /// 로그 실패가 업데이트 결과나 exit code를 변경하지 않도록 모든 예외를 흡수한다.
     /// </summary>
     internal static class UpdateClientLog
@@ -95,17 +95,18 @@ namespace POSCAM.UpdateClient.Services
 
         internal static string GetLogPath(
             string installDirectory,
-            DateTime utcNow)
+            DateTime localNow)
         {
             var installRoot = Path.GetFullPath(
                 installDirectory.Trim());
-            var fileName = "updateclient-"
-                + utcNow.ToString("yyyyMMdd", CultureInfo.InvariantCulture)
+            var fileName = "update_"
+                + localNow.ToString(
+                    "yyyyMMdd",
+                    CultureInfo.InvariantCulture)
                 + ".log";
 
             return Path.Combine(
                 installRoot,
-                "_update",
                 "logs",
                 fileName);
         }
@@ -130,10 +131,10 @@ namespace POSCAM.UpdateClient.Services
                     return;
                 }
 
-                var utcNow = DateTime.UtcNow;
+                var localNow = DateTime.Now;
                 var logPath = GetLogPath(
                     normalizedInstallDirectory,
-                    utcNow);
+                    localNow);
                 var logDirectory = Path.GetDirectoryName(logPath);
 
                 if (string.IsNullOrWhiteSpace(logDirectory))
@@ -143,14 +144,14 @@ namespace POSCAM.UpdateClient.Services
 
                 Directory.CreateDirectory(logDirectory);
 
-                var line = utcNow.ToString(
-                        "O",
+                var line = localNow.ToString(
+                        "yyyy-MM-dd HH:mm:ss.fff",
                         CultureInfo.InvariantCulture)
-                    + "\t"
+                    + " | "
                     + Sanitize(level)
-                    + "\t"
+                    + " | Event="
                     + Sanitize(eventName)
-                    + "\t"
+                    + " | Message="
                     + Sanitize(message)
                     + Environment.NewLine;
 

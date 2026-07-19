@@ -1,5 +1,4 @@
 using System;
-using System.Collections.Generic;
 using System.IO;
 using System.Security.Cryptography;
 using System.Text;
@@ -56,14 +55,6 @@ namespace POSCAM.UpdateClient.Tests.Services
 
             WriteInstalledFile("PcCam.exe", previousExecutable);
             WriteInstalledFile("Shared.dll", unchangedLibrary);
-            SaveInstalledManifest(
-                "1.0.0",
-                CreateInstalledManifestFile(
-                    "PcCam.exe",
-                    previousExecutable),
-                CreateInstalledManifestFile(
-                    "Shared.dll",
-                    unchangedLibrary));
 
             var fakeClient = new FakeUpdateServerClient
             {
@@ -98,17 +89,12 @@ namespace POSCAM.UpdateClient.Tests.Services
         }
 
         [Fact]
-        public async Task CheckAsync_UpdateAvailableWithoutIncrementalTargets_FallsBackToFullPackage()
+        public async Task CheckAsync_UpdateAvailableWithMatchingFiles_ReturnsVerificationFailed()
         {
             var matchingExecutable = Encoding.UTF8.GetBytes(
                 "matching executable");
 
             WriteInstalledFile("PcCam.exe", matchingExecutable);
-            SaveInstalledManifest(
-                "1.0.0",
-                CreateInstalledManifestFile(
-                    "PcCam.exe",
-                    matchingExecutable));
 
             var fakeClient = new FakeUpdateServerClient
             {
@@ -129,8 +115,10 @@ namespace POSCAM.UpdateClient.Tests.Services
                 CreateOptions(),
                 CancellationToken.None);
 
-            Assert.Equal(UpdateClientExitCodes.ApplyRequired, result.ExitCode);
-            Assert.True(result.FullPackageUpdateRequired);
+            Assert.Equal(
+                UpdateClientExitCodes.VerificationFailed,
+                result.ExitCode);
+            Assert.False(result.FullPackageUpdateRequired);
             Assert.False(result.IncrementalUpdateRequired);
             Assert.False(result.RepairPlan.HasRepairTargets);
         }
@@ -312,22 +300,6 @@ namespace POSCAM.UpdateClient.Tests.Services
             };
         }
 
-        private void SaveInstalledManifest(
-            string version,
-            params InstalledManifestFile[] files)
-        {
-            new InstalledManifestStore().Save(
-                _installDirectory,
-                new InstalledManifest
-                {
-                    ProductCode = "PCCAM",
-                    Architecture = "x86",
-                    Version = version,
-                    InstalledAtUtc = DateTime.UtcNow,
-                    Files = new List<InstalledManifestFile>(files)
-                });
-        }
-
         private void WriteInstalledFile(
             string relativePath,
             byte[] content)
@@ -343,18 +315,6 @@ namespace POSCAM.UpdateClient.Tests.Services
             }
 
             File.WriteAllBytes(path, content);
-        }
-
-        private static InstalledManifestFile CreateInstalledManifestFile(
-            string path,
-            byte[] content)
-        {
-            return new InstalledManifestFile
-            {
-                Path = path,
-                Size = content.LongLength,
-                Sha256 = CalculateSha256(content)
-            };
         }
 
         private static UpdateManifestFile CreateManifestFile(

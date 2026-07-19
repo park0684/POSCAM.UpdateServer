@@ -8,6 +8,8 @@ namespace POSCAM.UpdateClient.Services
 {
     /// <summary>
     /// 적용 계획을 부분 파일이 노출되지 않도록 임시 파일을 거쳐 저장하고 읽는다.
+    /// 동일 설치 경로의 여러 UpdateClient 프로세스가 계획을 동시에 변경하지 않도록
+    /// 프로세스 간 잠금을 사용한다.
     /// </summary>
     internal sealed class UpdateApplyPlanStore
     {
@@ -16,15 +18,84 @@ namespace POSCAM.UpdateClient.Services
 
         public UpdateApplyPlan Load(string planPath)
         {
-            if (string.IsNullOrWhiteSpace(planPath))
+            var fullPlanPath = NormalizePlanPath(planPath);
+
+            return UpdatePlanLock.Execute(
+                fullPlanPath,
+                () => LoadCore(fullPlanPath));
+        }
+
+        public string Save(
+            string planPath,
+            UpdateApplyPlan plan)
+        {
+            if (plan == null)
             {
-                throw new ArgumentException(
-                    "적용 계획 경로가 비어 있습니다.",
-                    nameof(planPath));
+                throw new ArgumentNullException(nameof(plan));
             }
 
-            var fullPlanPath = Path.GetFullPath(planPath.Trim());
+            var fullPlanPath = NormalizePlanPath(planPath);
 
+            return UpdatePlanLock.Execute(
+                fullPlanPath,
+                () => SaveCore(fullPlanPath, plan));
+        }
+
+        public void Delete(string planPath)
+        {
+            if (string.IsNullOrWhiteSpace(planPath))
+            {
+                return;
+            }
+
+            var fullPlanPath = Path.GetFullPath(
+                planPath.Trim());
+
+            UpdatePlanLock.Execute(
+                fullPlanPath,
+                () => DeleteCore(fullPlanPath));
+        }
+
+        public bool DeleteIfJobMatches(
+            string planPath,
+            string expectedJobId)
+        {
+            if (string.IsNullOrWhiteSpace(expectedJobId))
+            {
+                throw new ArgumentException(
+                    "비교할 업데이트 JobId가 비어 있습니다.",
+                    nameof(expectedJobId));
+            }
+
+            var fullPlanPath = NormalizePlanPath(planPath);
+            var normalizedExpectedJobId = expectedJobId.Trim();
+
+            return UpdatePlanLock.Execute(
+                fullPlanPath,
+                () =>
+                {
+                    if (!File.Exists(fullPlanPath))
+                    {
+                        return false;
+                    }
+
+                    var plan = LoadCore(fullPlanPath);
+
+                    if (!string.Equals(
+                        plan.JobId,
+                        normalizedExpectedJobId,
+                        StringComparison.OrdinalIgnoreCase))
+                    {
+                        return false;
+                    }
+
+                    DeleteCore(fullPlanPath);
+                    return true;
+                });
+        }
+
+        private static UpdateApplyPlan LoadCore(string fullPlanPath)
+        {
             if (!File.Exists(fullPlanPath))
             {
                 throw new FileNotFoundException(
@@ -36,8 +107,11 @@ namespace POSCAM.UpdateClient.Services
 
             try
             {
-                var json = File.ReadAllText(fullPlanPath, Encoding.UTF8);
-                plan = JsonConvert.DeserializeObject<UpdateApplyPlan>(json);
+                var json = File.ReadAllText(
+                    fullPlanPath,
+                    Encoding.UTF8);
+                plan = JsonConvert.DeserializeObject<
+                    UpdateApplyPlan>(json);
             }
             catch (JsonException exception)
             {
@@ -61,24 +135,12 @@ namespace POSCAM.UpdateClient.Services
             return plan;
         }
 
-        public string Save(
-            string planPath,
+        private static string SaveCore(
+            string fullPlanPath,
             UpdateApplyPlan plan)
         {
-            if (string.IsNullOrWhiteSpace(planPath))
-            {
-                throw new ArgumentException(
-                    "적용 계획 경로가 비어 있습니다.",
-                    nameof(planPath));
-            }
-
-            if (plan == null)
-            {
-                throw new ArgumentNullException(nameof(plan));
-            }
-
-            var fullPlanPath = Path.GetFullPath(planPath.Trim());
-            var stateDirectory = Path.GetDirectoryName(fullPlanPath);
+            var stateDirectory = Path.GetDirectoryName(
+                fullPlanPath);
 
             if (string.IsNullOrWhiteSpace(stateDirectory))
             {
@@ -113,16 +175,22 @@ namespace POSCAM.UpdateClient.Services
             }
         }
 
-        public void Delete(string planPath)
+        private static void DeleteCore(string fullPlanPath)
+        {
+            DeleteIfExists(fullPlanPath);
+            DeleteIfExists(fullPlanPath + ".tmp");
+        }
+
+        private static string NormalizePlanPath(string planPath)
         {
             if (string.IsNullOrWhiteSpace(planPath))
             {
-                return;
+                throw new ArgumentException(
+                    "적용 계획 경로가 비어 있습니다.",
+                    nameof(planPath));
             }
 
-            var fullPlanPath = Path.GetFullPath(planPath.Trim());
-            DeleteIfExists(fullPlanPath);
-            DeleteIfExists(fullPlanPath + ".tmp");
+            return Path.GetFullPath(planPath.Trim());
         }
 
         private static void DeleteIfExists(string path)

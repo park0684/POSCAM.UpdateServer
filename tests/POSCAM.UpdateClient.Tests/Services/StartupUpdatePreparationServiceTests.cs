@@ -36,6 +36,13 @@ namespace POSCAM.UpdateClient.Tests.Services
             Directory.CreateDirectory(stateDirectory!);
             File.WriteAllText(activePlanPath, "stale");
 
+            var manifestStore = new InstalledManifestStore();
+            var legacyManifestPath = manifestStore.GetManifestPath(
+                _installDirectory);
+            File.WriteAllText(
+                legacyManifestPath,
+                "legacy manifest");
+
             var service = CreateService(
                 new FakeUpdateFileDownloadService());
 
@@ -49,6 +56,62 @@ namespace POSCAM.UpdateClient.Tests.Services
 
             Assert.Equal(UpdateClientExitCodes.Success, exitCode);
             Assert.False(File.Exists(activePlanPath));
+            Assert.False(File.Exists(legacyManifestPath));
+            Assert.False(Directory.Exists(
+                Path.Combine(_installDirectory, "_update")));
+        }
+
+        [Fact]
+        public async Task PrepareAsync_UpdateCheckFailure_PreservesActiveJobAndRemovesOrphans()
+        {
+            var activePlan = new UpdateApplyPlan
+            {
+                JobId = "active-job-001",
+                ProductCode = "PCCAM",
+                Architecture = "x86",
+                InstallDirectory = _installDirectory,
+                ApplicationFileName = "PcCam.exe",
+                Mode = UpdateApplyModes.FileRepair,
+                CreatedAtUtc = DateTime.UtcNow
+            };
+            var activePlanPath = GetActivePlanPath();
+            new UpdateApplyPlanStore().Save(
+                activePlanPath,
+                activePlan);
+
+            var pathService = new UpdateWorkPathService();
+            var activeJobDirectory = pathService.GetJobDirectory(
+                _installDirectory,
+                activePlan.JobId);
+            var orphanJobDirectory = pathService.GetJobDirectory(
+                _installDirectory,
+                "orphan-job-001");
+            Directory.CreateDirectory(activeJobDirectory);
+            Directory.CreateDirectory(orphanJobDirectory);
+            File.WriteAllText(
+                Path.Combine(activeJobDirectory, "active.bin"),
+                "active");
+            File.WriteAllText(
+                Path.Combine(orphanJobDirectory, "orphan.bin"),
+                "orphan");
+
+            var exitCode = await CreateService(
+                    new FakeUpdateFileDownloadService())
+                .PrepareAsync(
+                    CreateOptions(),
+                    new StartupCheckResult
+                    {
+                        ExitCode =
+                            UpdateClientExitCodes.UpdateCheckFailed
+                    },
+                    CancellationToken.None);
+
+            Assert.Equal(
+                UpdateClientExitCodes.UpdateCheckFailed,
+                exitCode);
+            Assert.True(File.Exists(activePlanPath));
+            Assert.True(Directory.Exists(activeJobDirectory));
+            Assert.False(Directory.Exists(orphanJobDirectory));
         }
 
         [Fact]
@@ -184,6 +247,9 @@ namespace POSCAM.UpdateClient.Tests.Services
             {
                 Assert.Empty(Directory.GetDirectories(downloadsRoot));
             }
+
+            Assert.False(Directory.Exists(
+                Path.Combine(_installDirectory, "_update")));
         }
 
         [Fact]
