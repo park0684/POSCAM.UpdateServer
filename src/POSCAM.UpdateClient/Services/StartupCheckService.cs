@@ -187,19 +187,14 @@ namespace POSCAM.UpdateClient.Services
             InstalledManifest? targetManifest,
             int manifestCount)
         {
-            var installedManifest = _installedManifestStore.Load(
-                options.InstallDirectory);
             var fallbackRequested = _installedManifestStore
                 .IsFullPackageFallbackRequested(
                     options.InstallDirectory);
 
             if (fallbackRequested
-                || installedManifest == null
                 || targetManifest == null
-                || !IsInstalledManifestCompatible(
-                    installedManifest,
-                    options,
-                    currentVersion))
+                || response.Files == null
+                || response.Files.Count == 0)
             {
                 UpdateClientLog.Info(
                     options.InstallDirectory,
@@ -218,25 +213,25 @@ namespace POSCAM.UpdateClient.Services
                 };
             }
 
-            var incrementalPlan = _repairPlanner.CreateIncrementalPlan(
+            var incrementalPlan = _repairPlanner.CreatePlan(
                 options.InstallDirectory,
-                response.Files,
-                installedManifest);
+                response.Files);
 
             if (!incrementalPlan.HasRepairTargets)
             {
-                UpdateClientLog.Info(
+                UpdateClientLog.Error(
                     options.InstallDirectory,
-                    "StartupCheck.Decision",
-                    "Mode=FullPackage"
-                        + " Reason=NoIncrementalTargets"
-                        + " ManifestFiles=" + manifestCount
-                        + " ExitCode=10");
+                    "StartupCheck.VersionManifestMismatch",
+                    "서버는 상위 버전을 반환했지만 실제 설치 파일과 서버 Manifest가 모두 일치합니다. "
+                        + "릴리스 버전 또는 Manifest 구성을 확인해야 합니다. "
+                        + "CurrentVersion=" + currentVersion
+                        + " LatestVersion=" + response.LatestVersion
+                        + " ExitCode=20");
 
                 return new StartupCheckResult
                 {
-                    ExitCode = UpdateClientExitCodes.ApplyRequired,
-                    FullPackageUpdateRequired = true,
+                    ExitCode = UpdateClientExitCodes.VerificationFailed,
+                    FullPackageUpdateRequired = false,
                     IncrementalUpdateRequired = false,
                     UpdateResponse = response,
                     TargetManifest = targetManifest
@@ -375,39 +370,6 @@ namespace POSCAM.UpdateClient.Services
             }
 
             return manifest.Files.Count == 0 ? null : manifest;
-        }
-
-        private static bool IsInstalledManifestCompatible(
-            InstalledManifest installedManifest,
-            StartupCheckOptions options,
-            string currentVersion)
-        {
-            if (!UpdateProductIdentity.TryNormalize(
-                    installedManifest.ProductCode,
-                    installedManifest.Architecture,
-                    out var installedProductCode,
-                    out var installedArchitecture)
-                || !UpdateProductIdentity.TryNormalize(
-                    options.ProductCode,
-                    options.Architecture,
-                    out var requestedProductCode,
-                    out var requestedArchitecture))
-            {
-                return false;
-            }
-
-            return string.Equals(
-                    installedProductCode,
-                    requestedProductCode,
-                    StringComparison.Ordinal)
-                && string.Equals(
-                    installedArchitecture,
-                    requestedArchitecture,
-                    StringComparison.Ordinal)
-                && string.Equals(
-                    installedManifest.Version.Trim(),
-                    currentVersion.Trim(),
-                    StringComparison.OrdinalIgnoreCase);
         }
 
         private static bool IsValidSha256(string value)

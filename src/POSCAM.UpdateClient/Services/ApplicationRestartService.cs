@@ -6,9 +6,28 @@ namespace POSCAM.UpdateClient.Services
 {
     internal sealed class ApplicationRestartService : IApplicationRestartService
     {
+        private const string SkipUpdateOnceArgument =
+            "--skip-update-once";
+
+        private readonly Action<ProcessStartInfo> _processStarter;
+
+        public ApplicationRestartService()
+            : this(StartProcess)
+        {
+        }
+
+        internal ApplicationRestartService(
+            Action<ProcessStartInfo> processStarter)
+        {
+            _processStarter = processStarter
+                ?? throw new ArgumentNullException(
+                    nameof(processStarter));
+        }
+
         public void Restart(
             string installDirectory,
-            string applicationFileName)
+            string applicationFileName,
+            bool skipUpdateOnce)
         {
             if (string.IsNullOrWhiteSpace(installDirectory))
             {
@@ -47,12 +66,20 @@ namespace POSCAM.UpdateClient.Services
                     applicationPath);
             }
 
-            var process = Process.Start(new ProcessStartInfo
+            _processStarter(new ProcessStartInfo
             {
                 FileName = applicationPath,
                 WorkingDirectory = installRoot,
-                UseShellExecute = true
+                UseShellExecute = true,
+                Arguments = skipUpdateOnce
+                    ? SkipUpdateOnceArgument
+                    : ""
             });
+        }
+
+        private static void StartProcess(ProcessStartInfo startInfo)
+        {
+            var process = Process.Start(startInfo);
 
             if (process == null)
             {

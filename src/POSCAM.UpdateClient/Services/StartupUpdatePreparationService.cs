@@ -16,6 +16,7 @@ namespace POSCAM.UpdateClient.Services
         private readonly UpdateWorkPathService _workPathService;
         private readonly UpdateApplyPlanStore _planStore;
         private readonly InstalledManifestStore _installedManifestStore;
+        private readonly UpdateWorkCleanupService _cleanupService;
 
         public StartupUpdatePreparationService(
             IUpdateFileDownloadService downloadService,
@@ -44,6 +45,9 @@ namespace POSCAM.UpdateClient.Services
             _installedManifestStore = installedManifestStore
                 ?? throw new ArgumentNullException(
                     nameof(installedManifestStore));
+            _cleanupService = new UpdateWorkCleanupService(
+                _workPathService,
+                _planStore);
         }
 
         public async Task<int> PrepareAsync(
@@ -67,7 +71,8 @@ namespace POSCAM.UpdateClient.Services
             {
                 paths = _workPathService.Create(
                     options.InstallDirectory);
-                _planStore.Delete(paths.ActivePlanPath);
+                _cleanupService.CleanupOrphanedWork(
+                    paths.InstallDirectory);
             }
             catch (Exception exception)
                 when (exception is ArgumentException
@@ -94,35 +99,18 @@ namespace POSCAM.UpdateClient.Services
                 return UpdateClientExitCodes.DownloadFailed;
             }
 
+            TryDeleteLegacyInstalledManifest(
+                paths.InstallDirectory);
+
             if (checkResult.ExitCode
                 != UpdateClientExitCodes.ApplyRequired)
             {
-                if (checkResult.ExitCode == UpdateClientExitCodes.Success
-                    && checkResult.TargetManifest != null)
+                if (checkResult.ExitCode == UpdateClientExitCodes.Success)
                 {
-                    try
-                    {
-                        _installedManifestStore.Save(
-                            paths.InstallDirectory,
-                            checkResult.TargetManifest);
-                        _installedManifestStore.ClearFullPackageFallback(
-                            paths.InstallDirectory);
-                    }
-                    catch (Exception exception)
-                        when (exception is ArgumentException
-                            || exception is InvalidDataException
-                            || exception is IOException
-                            || exception is UnauthorizedAccessException
-                            || exception is NotSupportedException
-                            || exception is PathTooLongException)
-                    {
-                        UpdateClientLog.Error(
-                            paths.InstallDirectory,
-                            "Preparation.ManifestSaveFailed",
-                            "설치 Manifest를 저장하지 못했습니다. ExitCode=40",
-                            exception);
-                        return UpdateClientExitCodes.DownloadFailed;
-                    }
+                    TryClearFullPackageFallback(
+                        paths.InstallDirectory);
+                    _cleanupService.CleanupNoWork(
+                        paths.InstallDirectory);
                 }
 
                 UpdateClientLog.Info(
@@ -205,6 +193,8 @@ namespace POSCAM.UpdateClient.Services
                 }
 
                 _planStore.Save(paths.ActivePlanPath, plan);
+                _cleanupService.CleanupOrphanedWork(
+                    paths.InstallDirectory);
 
                 UpdateClientLog.Info(
                     paths.InstallDirectory,
@@ -444,6 +434,59 @@ namespace POSCAM.UpdateClient.Services
             }
         }
 
+        private void TryDeleteLegacyInstalledManifest(
+            string installDirectory)
+        {
+            try
+            {
+                _installedManifestStore.Delete(
+                    installDirectory);
+
+                UpdateClientLog.Info(
+                    installDirectory,
+                    "Preparation.LegacyManifestRemoved",
+                    "기존 installed-manifest.json이 존재하면 삭제했습니다.");
+            }
+            catch (Exception exception)
+                when (exception is ArgumentException
+                    || exception is InvalidDataException
+                    || exception is IOException
+                    || exception is UnauthorizedAccessException
+                    || exception is NotSupportedException
+                    || exception is PathTooLongException)
+            {
+                UpdateClientLog.Error(
+                    installDirectory,
+                    "Preparation.LegacyManifestRemoveFailed",
+                    "기존 installed-manifest.json 삭제에 실패했지만 업데이트 확인은 계속합니다.",
+                    exception);
+            }
+        }
+
+        private void TryClearFullPackageFallback(
+            string installDirectory)
+        {
+            try
+            {
+                _installedManifestStore.ClearFullPackageFallback(
+                    installDirectory);
+            }
+            catch (Exception exception)
+                when (exception is ArgumentException
+                    || exception is InvalidDataException
+                    || exception is IOException
+                    || exception is UnauthorizedAccessException
+                    || exception is NotSupportedException
+                    || exception is PathTooLongException)
+            {
+                UpdateClientLog.Error(
+                    installDirectory,
+                    "Preparation.FallbackClearFailed",
+                    "업데이트가 필요하지 않은 상태에서 Full Package 전환 표시를 정리하지 못했습니다.",
+                    exception);
+            }
+        }
+
         private static bool IsIncrementalFallbackException(
             Exception exception)
         {
@@ -468,26 +511,7 @@ namespace POSCAM.UpdateClient.Services
 
         private void CleanupFailedJob(UpdateWorkPaths paths)
         {
-            try
-            {
-                _planStore.Delete(paths.ActivePlanPath);
-            }
-            catch
-            {
-                // 실패 정리 중 예외가 원래 종료 코드를 덮어쓰지 않도록 한다.
-            }
-
-            try
-            {
-                if (Directory.Exists(paths.JobDirectory))
-                {
-                    Directory.Delete(paths.JobDirectory, true);
-                }
-            }
-            catch
-            {
-                // 실패 작업 폴더 정리는 후속 로그/정리 단계에서 재시도한다.
-            }
+            _cleanupService.CleanupFailedPreparation(paths);
         }
     }
 }

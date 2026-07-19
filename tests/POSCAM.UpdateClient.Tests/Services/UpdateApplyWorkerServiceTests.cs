@@ -37,6 +37,7 @@ namespace POSCAM.UpdateClient.Tests.Services
             var appPath = Path.Combine(_installDirectory, "PcCam.exe");
             File.WriteAllBytes(appPath, original);
             var planPath = SavePlan(updated);
+            var workerDirectory = CreateWorkerDirectory();
             var wait = new FakeProcessWaitService();
             var restart = new FakeApplicationRestartService();
 
@@ -48,8 +49,18 @@ namespace POSCAM.UpdateClient.Tests.Services
             Assert.Equal(4321, wait.LastProcessId);
             Assert.Equal(TimeSpan.FromSeconds(45), wait.LastTimeout);
             Assert.Equal(1, restart.CallCount);
+            Assert.False(restart.LastSkipUpdateOnce);
             Assert.False(File.Exists(planPath));
             Assert.Equal(updated, File.ReadAllBytes(appPath));
+            Assert.False(Directory.Exists(
+                _pathService.GetJobDirectory(
+                    _installDirectory,
+                    JobId)));
+            Assert.False(Directory.Exists(
+                _pathService.GetBackupDirectory(
+                    _installDirectory,
+                    JobId)));
+            Assert.True(Directory.Exists(workerDirectory));
         }
 
         [Fact]
@@ -72,6 +83,7 @@ namespace POSCAM.UpdateClient.Tests.Services
             Assert.Equal(UpdateClientExitCodes.ApplyFailed, exitCode);
             Assert.Equal(original, File.ReadAllBytes(appPath));
             Assert.Equal(1, restart.CallCount);
+            Assert.True(restart.LastSkipUpdateOnce);
             Assert.True(File.Exists(planPath));
         }
 
@@ -92,6 +104,7 @@ namespace POSCAM.UpdateClient.Tests.Services
 
             Assert.Equal(UpdateClientExitCodes.ApplyFailed, exitCode);
             Assert.Equal(1, restart.CallCount);
+            Assert.True(restart.LastSkipUpdateOnce);
             Assert.Equal("PcCam.exe", restart.LastApplicationFileName);
             Assert.True(File.Exists(planPath));
         }
@@ -117,6 +130,7 @@ namespace POSCAM.UpdateClient.Tests.Services
 
             Assert.Equal(UpdateClientExitCodes.ApplyFailed, exitCode);
             Assert.Equal(1, restart.CallCount);
+            Assert.True(restart.LastSkipUpdateOnce);
             Assert.Equal("PcCam.exe", restart.LastApplicationFileName);
             Assert.True(File.Exists(planPath));
         }
@@ -128,6 +142,7 @@ namespace POSCAM.UpdateClient.Tests.Services
             var appPath = Path.Combine(_installDirectory, "PcCam.exe");
             File.WriteAllBytes(appPath, original);
             var planPath = SavePlan(Encoding.UTF8.GetBytes("new app"));
+            var workerDirectory = CreateWorkerDirectory();
             var restart = new FakeApplicationRestartService
             {
                 ExceptionFactory = callCount => callCount == 1
@@ -143,8 +158,62 @@ namespace POSCAM.UpdateClient.Tests.Services
 
             Assert.Equal(UpdateClientExitCodes.ApplyFailed, exitCode);
             Assert.Equal(2, restart.CallCount);
+            Assert.Equal(
+                new[] { false, true },
+                restart.SkipUpdateOnceValues);
+            Assert.Equal(original, File.ReadAllBytes(appPath));
+            Assert.False(File.Exists(planPath));
+            Assert.False(Directory.Exists(
+                _pathService.GetJobDirectory(
+                    _installDirectory,
+                    JobId)));
+            Assert.False(Directory.Exists(
+                _pathService.GetBackupDirectory(
+                    _installDirectory,
+                    JobId)));
+            Assert.True(Directory.Exists(workerDirectory));
+        }
+
+        [Fact]
+        public async Task ApplyAsync_RollbackRecoveryFailure_PreservesPlanAndJob()
+        {
+            var original = Encoding.UTF8.GetBytes("old app");
+            var appPath = Path.Combine(
+                _installDirectory,
+                "PcCam.exe");
+            File.WriteAllBytes(appPath, original);
+            var planPath = SavePlan(
+                Encoding.UTF8.GetBytes("new app"));
+            var workerDirectory = CreateWorkerDirectory();
+            var restart = new FakeApplicationRestartService
+            {
+                ExceptionFactory = callCount =>
+                    new IOException("restart failed " + callCount)
+            };
+
+            var exitCode = await CreateService(
+                    new FakeProcessWaitService(),
+                    restart)
+                .ApplyAsync(
+                    CreateOptions(planPath),
+                    CancellationToken.None);
+
+            Assert.Equal(UpdateClientExitCodes.ApplyFailed, exitCode);
+            Assert.Equal(2, restart.CallCount);
+            Assert.Equal(
+                new[] { false, true },
+                restart.SkipUpdateOnceValues);
             Assert.Equal(original, File.ReadAllBytes(appPath));
             Assert.True(File.Exists(planPath));
+            Assert.True(Directory.Exists(
+                _pathService.GetJobDirectory(
+                    _installDirectory,
+                    JobId)));
+            Assert.True(Directory.Exists(
+                _pathService.GetBackupDirectory(
+                    _installDirectory,
+                    JobId)));
+            Assert.True(Directory.Exists(workerDirectory));
         }
 
         private UpdateApplyWorkerService CreateService(
@@ -211,6 +280,18 @@ namespace POSCAM.UpdateClient.Tests.Services
             return _planStore.Save(
                 _pathService.GetActivePlanPath(_installDirectory),
                 plan);
+        }
+
+        private string CreateWorkerDirectory()
+        {
+            var workerDirectory = _pathService.GetWorkerDirectory(
+                _installDirectory,
+                JobId);
+            Directory.CreateDirectory(workerDirectory);
+            File.WriteAllText(
+                Path.Combine(workerDirectory, "worker.exe"),
+                "worker");
+            return workerDirectory;
         }
 
         private static string CalculateSha256(byte[] content)

@@ -33,7 +33,11 @@ namespace POSCAM.UpdateClient.Tests.Services
         [Fact]
         public async Task ApplyAsync_ValidFileRepair_AppliesRestartsAndDeletesPlan()
         {
+            var original = Encoding.UTF8.GetBytes("original content");
             var updated = Encoding.UTF8.GetBytes("updated content");
+            File.WriteAllBytes(
+                Path.Combine(_installDirectory, "provider.dll"),
+                original);
             var planPath = SaveFileRepairPlan("provider.dll", updated);
             var processWait = new FakeProcessWaitService();
             var restart = new FakeApplicationRestartService();
@@ -51,6 +55,7 @@ namespace POSCAM.UpdateClient.Tests.Services
             Assert.Equal(1234, processWait.LastProcessId);
             Assert.Equal(TimeSpan.FromSeconds(30), processWait.LastTimeout);
             Assert.Equal(1, restart.CallCount);
+            Assert.False(restart.LastSkipUpdateOnce);
             Assert.Equal(0, workerLauncher.CallCount);
             Assert.False(File.Exists(planPath));
             Assert.Equal(
@@ -58,6 +63,102 @@ namespace POSCAM.UpdateClient.Tests.Services
                 File.ReadAllBytes(Path.Combine(
                     _installDirectory,
                     "provider.dll")));
+            Assert.False(Directory.Exists(
+                _pathService.GetJobDirectory(
+                    _installDirectory,
+                    JobId)));
+            Assert.False(Directory.Exists(
+                _pathService.GetBackupDirectory(
+                    _installDirectory,
+                    JobId)));
+            Assert.False(Directory.Exists(
+                _pathService.GetUpdateRootDirectory(
+                    _installDirectory)));
+        }
+
+        [Fact]
+        public async Task ApplyAsync_RestartFailureWithSuccessfulRollback_CleansCompletedJob()
+        {
+            var original = Encoding.UTF8.GetBytes("original");
+            var destination = Path.Combine(
+                _installDirectory,
+                "provider.dll");
+            File.WriteAllBytes(destination, original);
+            var planPath = SaveFileRepairPlan(
+                "provider.dll",
+                Encoding.UTF8.GetBytes("updated"));
+            var restart = new FakeApplicationRestartService
+            {
+                ExceptionFactory = callCount => callCount == 1
+                    ? new IOException("restart failed")
+                    : null
+            };
+
+            var exitCode = await CreateService(
+                    new FakeProcessWaitService(),
+                    restart,
+                    new FakeUpdateWorkerLauncherService())
+                .ApplyAsync(
+                    CreateOptions(planPath),
+                    CancellationToken.None);
+
+            Assert.Equal(UpdateClientExitCodes.ApplyFailed, exitCode);
+            Assert.Equal(2, restart.CallCount);
+            Assert.Equal(
+                new[] { false, true },
+                restart.SkipUpdateOnceValues);
+            Assert.Equal(original, File.ReadAllBytes(destination));
+            Assert.False(File.Exists(planPath));
+            Assert.False(Directory.Exists(
+                _pathService.GetJobDirectory(
+                    _installDirectory,
+                    JobId)));
+            Assert.False(Directory.Exists(
+                _pathService.GetBackupDirectory(
+                    _installDirectory,
+                    JobId)));
+        }
+
+        [Fact]
+        public async Task ApplyAsync_RollbackRecoveryFailure_PreservesPlanAndJob()
+        {
+            var original = Encoding.UTF8.GetBytes("original");
+            var destination = Path.Combine(
+                _installDirectory,
+                "provider.dll");
+            File.WriteAllBytes(destination, original);
+            var planPath = SaveFileRepairPlan(
+                "provider.dll",
+                Encoding.UTF8.GetBytes("updated"));
+            var restart = new FakeApplicationRestartService
+            {
+                ExceptionFactory = callCount =>
+                    new IOException("restart failed " + callCount)
+            };
+
+            var exitCode = await CreateService(
+                    new FakeProcessWaitService(),
+                    restart,
+                    new FakeUpdateWorkerLauncherService())
+                .ApplyAsync(
+                    CreateOptions(planPath),
+                    CancellationToken.None);
+
+            Assert.Equal(UpdateClientExitCodes.ApplyFailed, exitCode);
+            Assert.Equal(2, restart.CallCount);
+            Assert.Equal(
+                new[] { false, true },
+                restart.SkipUpdateOnceValues);
+            Assert.Equal(original, File.ReadAllBytes(destination));
+            Assert.True(File.Exists(planPath));
+            Assert.True(Directory.Exists(
+                _pathService.GetJobDirectory(
+                    _installDirectory,
+                    JobId)));
+            Assert.True(Directory.Exists(
+                _pathService.GetBackupDirectory(
+                    _installDirectory,
+                    JobId)));
         }
 
         [Fact]
@@ -111,6 +212,7 @@ namespace POSCAM.UpdateClient.Tests.Services
 
             Assert.Equal(UpdateClientExitCodes.ApplyFailed, exitCode);
             Assert.Equal(1, restart.CallCount);
+            Assert.True(restart.LastSkipUpdateOnce);
             Assert.Equal("PcCam.exe", restart.LastApplicationFileName);
             Assert.Equal(0, workerLauncher.CallCount);
             Assert.True(File.Exists(planPath));
@@ -141,6 +243,7 @@ namespace POSCAM.UpdateClient.Tests.Services
 
             Assert.Equal(UpdateClientExitCodes.ApplyFailed, exitCode);
             Assert.Equal(1, restart.CallCount);
+            Assert.True(restart.LastSkipUpdateOnce);
             Assert.Equal("PcCam.exe", restart.LastApplicationFileName);
             Assert.Equal(0, workerLauncher.CallCount);
             Assert.True(File.Exists(planPath));
@@ -205,6 +308,7 @@ namespace POSCAM.UpdateClient.Tests.Services
 
             Assert.Equal(UpdateClientExitCodes.ApplyFailed, exitCode);
             Assert.Equal(1, restart.CallCount);
+            Assert.True(restart.LastSkipUpdateOnce);
             Assert.Equal(0, workerLauncher.CallCount);
             Assert.True(File.Exists(planPath));
             Assert.Equal(2, _planStore.Load(planPath).Targets.Count);

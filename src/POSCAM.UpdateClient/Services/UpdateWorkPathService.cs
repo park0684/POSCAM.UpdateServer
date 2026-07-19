@@ -45,6 +45,40 @@ namespace POSCAM.UpdateClient.Services
                 "repair-plan.json");
         }
 
+        public string GetUpdateRootDirectory(string installDirectory)
+        {
+            var installRoot = NormalizeInstallRoot(installDirectory);
+            return Path.Combine(installRoot, "_update");
+        }
+
+        public string GetDownloadsRootDirectory(string installDirectory)
+        {
+            return Path.Combine(
+                GetUpdateRootDirectory(installDirectory),
+                "downloads");
+        }
+
+        public string GetBackupsRootDirectory(string installDirectory)
+        {
+            return Path.Combine(
+                GetUpdateRootDirectory(installDirectory),
+                "backups");
+        }
+
+        public string GetWorkersRootDirectory(string installDirectory)
+        {
+            return Path.Combine(
+                GetUpdateRootDirectory(installDirectory),
+                "workers");
+        }
+
+        public string GetStateDirectory(string installDirectory)
+        {
+            return Path.Combine(
+                GetUpdateRootDirectory(installDirectory),
+                "state");
+        }
+
         public string GetJobDirectory(
             string installDirectory,
             string jobId)
