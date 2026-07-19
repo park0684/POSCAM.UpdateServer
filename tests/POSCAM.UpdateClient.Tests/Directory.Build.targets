@@ -1,0 +1,7 @@
+<Project>
+
+  <ItemGroup>
+    <ProjectReference Include="..\POSCAM.UpdateClient.ProcessHost\POSCAM.UpdateClient.ProcessHost.csproj" />
+  </ItemGroup>
+
+</Project>
