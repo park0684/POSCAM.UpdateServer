@@ -147,26 +147,50 @@ namespace POSCAM.UpdateClient.Services
         {
             if (!File.Exists(packagePath))
             {
+                UpdateClientLog.Error(
+                    plan.InstallDirectory,
+                    "apply.prechange.package-missing",
+                    "Full Package 파일을 찾을 수 없습니다."
+                        + " PackagePath=" + packagePath);
+
                 throw new FileNotFoundException(
                     "Full Package 파일을 찾을 수 없습니다.",
                     packagePath);
             }
 
             var packageFile = new FileInfo(packagePath);
+            var expectedSize = plan.PackageSize!.Value;
 
-            if (packageFile.Length != plan.PackageSize!.Value)
+            if (packageFile.Length != expectedSize)
             {
+                UpdateClientLog.Error(
+                    plan.InstallDirectory,
+                    "apply.prechange.package-size-mismatch",
+                    "Full Package 파일 크기가 적용 계획과 다릅니다."
+                        + " PackagePath=" + packagePath
+                        + " ExpectedSize=" + expectedSize
+                        + " ActualSize=" + packageFile.Length);
+
                 throw new InvalidDataException(
                     "Full Package 파일 크기가 적용 계획과 다릅니다.");
             }
 
+            var expectedSha256 = plan.PackageSha256!.Trim();
             var actualSha256 = _hashCalculator.CalculateSha256(packagePath);
 
             if (!string.Equals(
                 actualSha256,
-                plan.PackageSha256!.Trim(),
+                expectedSha256,
                 StringComparison.OrdinalIgnoreCase))
             {
+                UpdateClientLog.Error(
+                    plan.InstallDirectory,
+                    "apply.prechange.package-sha256-mismatch",
+                    "Full Package SHA-256이 적용 계획과 다릅니다."
+                        + " PackagePath=" + packagePath
+                        + " ExpectedSha256=" + expectedSha256
+                        + " ActualSha256=" + actualSha256);
+
                 throw new InvalidDataException(
                     "Full Package SHA-256이 적용 계획과 다릅니다.");
             }
@@ -227,7 +251,6 @@ namespace POSCAM.UpdateClient.Services
                     _pathService.ResolveInstallFilePath(
                         plan.InstallDirectory,
                         normalizedEntryPath);
-
                     if (!relativeFiles.Add(normalizedEntryPath))
                     {
                         throw new InvalidDataException(
@@ -270,7 +293,6 @@ namespace POSCAM.UpdateClient.Services
 
                     var sha256 = _hashCalculator.CalculateSha256(
                         temporaryFilePath);
-
                     targets.Add(new UpdateApplyTarget
                     {
                         RelativePath = normalizedEntryPath,
