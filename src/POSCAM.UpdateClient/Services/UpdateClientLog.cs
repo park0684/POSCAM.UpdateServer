@@ -11,6 +11,9 @@ namespace POSCAM.UpdateClient.Services
     /// </summary>
     internal static class UpdateClientLog
     {
+        private const string RedundantLegacyManifestEvent =
+            "Preparation.LegacyManifestRemoved";
+
         private static readonly object SyncRoot = new object();
 
         public static void Info(
@@ -18,6 +21,14 @@ namespace POSCAM.UpdateClient.Services
             string eventName,
             string message)
         {
+            if (string.Equals(
+                eventName,
+                RedundantLegacyManifestEvent,
+                StringComparison.Ordinal))
+            {
+                return;
+            }
+
             Write(
                 installDirectory,
                 "INFO",
