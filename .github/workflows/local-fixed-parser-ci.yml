@@ -1,0 +1,92 @@
+name: Local Fixed Parser CI
+
+on:
+  pull_request:
+    branches:
+      - master
+    paths:
+      - tools/Deploy-LocalDockerTest-Fixed.ps1
+      - tools/Deploy-LocalDockerTest.ps1
+      - .github/workflows/local-fixed-parser-ci.yml
+  push:
+    branches:
+      - master
+    paths:
+      - tools/Deploy-LocalDockerTest-Fixed.ps1
+      - tools/Deploy-LocalDockerTest.ps1
+      - .github/workflows/local-fixed-parser-ci.yml
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  validate-fixed-parser:
+    runs-on: windows-latest
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Validate syntax
+        shell: pwsh
+        run: |
+          $scriptPath = Resolve-Path '.\tools\Deploy-LocalDockerTest-Fixed.ps1'
+          $tokens = $null
+          $errors = $null
+
+          [System.Management.Automation.Language.Parser]::ParseFile(
+            $scriptPath.Path,
+            [ref]$tokens,
+            [ref]$errors) | Out-Null
+
+          if ($errors.Count -gt 0) {
+            $errors | ForEach-Object { Write-Error $_.Message }
+            throw 'Deploy-LocalDockerTest-Fixed.ps1 contains PowerShell syntax errors.'
+          }
+
+      - name: Diagnose explicit connection-string setter
+        shell: pwsh
+        run: |
+          $builder = New-Object System.Data.Common.DbConnectionStringBuilder
+          $builder.set_ConnectionString('server=poscam-db-new;port=3306;database=poscam_update;user id=test_user;password=test_password;')
+
+          Write-Host "Type=$($builder.GetType().FullName)"
+          Write-Host "KeysCount=$($builder.Keys.Count)"
+          foreach ($actualKey in $builder.Keys) {
+            Write-Host "Key=[$actualKey] Value=[$($builder[$actualKey])]"
+          }
+
+          if ($builder.Keys.Count -lt 5) {
+            throw "Explicit setter did not parse connection-string keys. KeysCount=$($builder.Keys.Count)"
+          }
+
+      - name: Run setter self-test
+        shell: pwsh
+        run: |
+          .\tools\Deploy-LocalDockerTest-Fixed.ps1 `
+            -DatabaseContainer poscam-db-new `
+            -ParserSelfTest
+
+      - name: Verify base assignment patch target
+        shell: pwsh
+        run: |
+          $baseContent = Get-Content -LiteralPath '.\tools\Deploy-LocalDockerTest.ps1' -Raw
+          $launcherContent = Get-Content -LiteralPath '.\tools\Deploy-LocalDockerTest-Fixed.ps1' -Raw
+
+          if (-not $baseContent.Contains('$connectionBuilder.ConnectionString = $connectionString')) {
+            throw 'Expected base ConnectionString assignment was not found.'
+          }
+
+          foreach ($marker in @(
+            '$connectionBuilder.set_ConnectionString($connectionString)',
+            'Applied explicit DbConnectionStringBuilder setter for this deployment run.',
+            'Restored the original Deploy-LocalDockerTest.ps1 bytes.',
+            '.poscam-local-docker-parser.lock'
+          )) {
+            if (-not $launcherContent.Contains($marker)) {
+              throw "Expected fixed launcher marker is missing: $marker"
+            }
+          }
+
+          Write-Host 'Explicit connection-string setter launcher validation passed.'
