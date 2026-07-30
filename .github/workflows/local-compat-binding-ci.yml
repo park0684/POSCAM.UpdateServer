@@ -1,0 +1,87 @@
+name: Local Compat Binding CI
+
+on:
+  pull_request:
+    branches:
+      - master
+    paths:
+      - tools/Deploy-LocalDockerTest-Compat.ps1
+      - .github/workflows/local-compat-binding-ci.yml
+  push:
+    branches:
+      - master
+    paths:
+      - tools/Deploy-LocalDockerTest-Compat.ps1
+      - .github/workflows/local-compat-binding-ci.yml
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  validate-empty-string-binding:
+    runs-on: windows-latest
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Validate syntax and empty-string attributes
+        shell: pwsh
+        run: |
+          $scriptPath = Resolve-Path ".\tools\Deploy-LocalDockerTest-Compat.ps1"
+          $tokens = $null
+          $errors = $null
+          $ast = [System.Management.Automation.Language.Parser]::ParseFile(
+            $scriptPath.Path,
+            [ref]$tokens,
+            [ref]$errors)
+
+          if ($errors.Count -gt 0) {
+            $errors | ForEach-Object { Write-Error $_.Message }
+            throw "Deploy-LocalDockerTest-Compat.ps1 contains syntax errors."
+          }
+
+          $functionAst = $ast.Find(
+            {
+              param($node)
+              $node -is [System.Management.Automation.Language.FunctionDefinitionAst] -and
+                $node.Name -eq "Resolve-LocalDatabaseContainer"
+            },
+            $true)
+
+          if ($null -eq $functionAst) {
+            throw "Resolve-LocalDatabaseContainer was not found."
+          }
+
+          foreach ($parameterName in @("ConfiguredContainer", "ParsedServer")) {
+            $parameterAst = $functionAst.Body.ParamBlock.Parameters |
+              Where-Object { $_.Name.VariablePath.UserPath -eq $parameterName } |
+              Select-Object -First 1
+
+            if ($null -eq $parameterAst) {
+              throw "$parameterName parameter was not found."
+            }
+
+            $hasAllowEmptyString = @($parameterAst.Attributes | Where-Object {
+              $_.TypeName.FullName -eq "AllowEmptyString"
+            }).Count -gt 0
+
+            if (-not $hasAllowEmptyString) {
+              throw "$parameterName must declare AllowEmptyString."
+            }
+          }
+
+          $content = Get-Content -LiteralPath $scriptPath.Path -Raw
+          foreach ($requiredMarker in @(
+            '[AllowEmptyString()]',
+            'poscam-db-new',
+            'poscam-db',
+            'Database credentials resolved without logging secret values.'
+          )) {
+            if (-not $content.Contains($requiredMarker)) {
+              throw "Required local compatibility marker is missing: $requiredMarker"
+            }
+          }
+
+          Write-Host "Local DB empty-string parameter binding is valid."
