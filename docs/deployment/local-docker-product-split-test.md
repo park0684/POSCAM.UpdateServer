@@ -44,7 +44,7 @@ Package public URL     http://127.0.0.1:8088
 
 ## 실행
 
-저장소 루트에서 실행한다.
+저장소 루트의 Windows PowerShell 5.1 이상 환경에서 실행한다.
 
 ```powershell
 Set-Location D:\_work\POSCAM.UpdateServer
@@ -56,7 +56,7 @@ powershell -ExecutionPolicy Bypass `
   -File .\tools\Deploy-LocalDockerTest.ps1
 ```
 
-Docker Desktop이 실행 중이어야 한다.
+Docker Desktop이 실행 중이어야 하며, 현재 Windows 계정에서 Docker 명령을 실행할 수 있어야 한다.
 
 ## 스크립트 처리 순서
 
