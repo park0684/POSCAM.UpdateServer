@@ -9,15 +9,46 @@ POST /api/v1/updates/check
 Content-Type: application/json
 ```
 
+PC CAM 32비트 요청 예시:
+
 ```json
 {
-  "productCode": "PCCAM",
-  "currentVersion": "1.0.0",
+  "productCode": "PCCAM_X86",
+  "currentVersion": "3.0.4",
   "os": "windows",
   "architecture": "x86",
   "channel": "stable"
 }
 ```
+
+PC CAM 64비트 요청 예시:
+
+```json
+{
+  "productCode": "PCCAM_X64",
+  "currentVersion": "3.2.0",
+  "os": "windows",
+  "architecture": "x64",
+  "channel": "stable"
+}
+```
+
+지원 제품 코드:
+
+- `PCCAM`: 기존 설치 프로그램의 신규 제품 코드 전환용 레거시 코드
+- `PCCAM_X86`: PC CAM 32비트
+- `PCCAM_X64`: PC CAM 64비트
+- `CAMVIEWER`: CamViewer
+- `UPDATER`: 공용 UpdateClient
+
+PC CAM 신규 제품 코드는 다음 아키텍처 조합으로만 사용한다.
+
+```text
+PCCAM_X86 + x86
+PCCAM_X64 + x64
+```
+
+기존 `PCCAM`은 설치 프로그램 전환 기간 동안 `x86`, `x64` 요청을 모두 허용한다.
 
 업데이트 응답 Data:
 - updateAvailable
