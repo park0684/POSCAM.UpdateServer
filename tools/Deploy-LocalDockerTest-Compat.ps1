@@ -34,6 +34,7 @@ param(
     [string]$ConnectionStringPath = "D:\_work\poscam\secrets\update_connection_string.txt",
 
     [Parameter(Mandatory = $false)]
+    [AllowEmptyString()]
     [string]$DatabaseContainer = "",
 
     [Parameter(Mandatory = $false)]
@@ -64,6 +65,7 @@ function Get-NormalizedConnectionStringValue {
         [string[]]$Aliases,
 
         [Parameter(Mandatory = $false)]
+        [AllowEmptyString()]
         [string]$DefaultValue = ""
     )
 
@@ -85,8 +87,8 @@ function Remove-ConnectionStringWrapper {
     param([Parameter(Mandatory = $true)][string]$Value)
 
     $normalized = $Value.Trim([char]0xFEFF).Trim()
-
     $wrapperPattern = '^\s*(?:ConnectionStrings__DefaultConnection|ConnectionStrings:DefaultConnection|DefaultConnection)\s*=\s*(.+)$'
+
     if ($normalized -match $wrapperPattern) {
         $normalized = $Matches[1].Trim()
     }
@@ -94,6 +96,7 @@ function Remove-ConnectionStringWrapper {
     if ($normalized.Length -ge 2) {
         $first = $normalized[0]
         $last = $normalized[$normalized.Length - 1]
+
         if (($first -eq '"' -and $last -eq '"') -or
             ($first -eq "'" -and $last -eq "'")) {
             $normalized = $normalized.Substring(1, $normalized.Length - 2).Trim()
@@ -169,7 +172,7 @@ function Get-EnvironmentValue {
     param(
         [Parameter(Mandatory = $true)][hashtable]$Environment,
         [Parameter(Mandatory = $true)][string[]]$Keys,
-        [Parameter(Mandatory = $false)][string]$DefaultValue = ""
+        [Parameter(Mandatory = $false)][AllowEmptyString()][string]$DefaultValue = ""
     )
 
     foreach ($key in $Keys) {
@@ -185,7 +188,7 @@ function Get-EnvironmentValue {
 function Get-ContainerFileValue {
     param(
         [Parameter(Mandatory = $true)][string]$Container,
-        [Parameter(Mandatory = $true)][string]$Path
+        [Parameter(Mandatory = $false)][AllowEmptyString()][string]$Path = ""
     )
 
     if ([string]::IsNullOrWhiteSpace($Path)) {
@@ -221,8 +224,13 @@ function Get-EnvironmentOrFileValue {
 
 function Resolve-LocalDatabaseContainer {
     param(
-        [Parameter(Mandatory = $true)][string]$ConfiguredContainer,
-        [Parameter(Mandatory = $true)][string]$ParsedServer
+        [Parameter(Mandatory = $false)]
+        [AllowEmptyString()]
+        [string]$ConfiguredContainer = "",
+
+        [Parameter(Mandatory = $false)]
+        [AllowEmptyString()]
+        [string]$ParsedServer = ""
     )
 
     $allowedContainers = @("poscam-db-new", "poscam-db")
@@ -240,7 +248,9 @@ function Resolve-LocalDatabaseContainer {
         return $ConfiguredContainer
     }
 
-    if ($allowedContainers -contains $ParsedServer -and $running -contains $ParsedServer) {
+    if (-not [string]::IsNullOrWhiteSpace($ParsedServer) -and
+        $allowedContainers -contains $ParsedServer -and
+        $running -contains $ParsedServer) {
         return $ParsedServer
     }
 
@@ -299,7 +309,6 @@ $resolvedDatabaseContainer = Resolve-LocalDatabaseContainer `
     -ParsedServer $parsedServer
 
 $databaseEnvironment = Get-ContainerEnvironmentMap -Container $resolvedDatabaseContainer
-
 $containerDatabase = Get-EnvironmentValue `
     -Environment $databaseEnvironment `
     -Keys @("MARIADB_DATABASE", "MYSQL_DATABASE")
