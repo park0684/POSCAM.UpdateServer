@@ -70,8 +70,11 @@ jobs:
 
           $compatContent = Get-Content -LiteralPath ".\tools\Deploy-LocalDockerTest-Compat.ps1" -Raw
           $compatMarkers = @(
-            'Database=poscam_update',
-            'host.docker.internal',
+            'poscam_update',
+            'poscam-db-new',
+            'poscam-db',
+            'MARIADB_PASSWORD',
+            'MARIADB_ROOT_PASSWORD',
             'Deploy-LocalDockerTest.ps1',
             'WriteAllText',
             'Remove-Item'
