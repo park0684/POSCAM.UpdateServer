@@ -20,6 +20,47 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v4
 
+      - name: Validate local Docker deployment script
+        shell: pwsh
+        run: |
+          $scriptPath = Resolve-Path ".\tools\Deploy-LocalDockerTest.ps1"
+          $tokens = $null
+          $errors = $null
+
+          [System.Management.Automation.Language.Parser]::ParseFile(
+            $scriptPath.Path,
+            [ref]$tokens,
+            [ref]$errors) | Out-Null
+
+          if ($errors.Count -gt 0) {
+            $errors | ForEach-Object { Write-Error $_.Message }
+            throw "Deploy-LocalDockerTest.ps1 contains PowerShell syntax errors."
+          }
+
+          $content = Get-Content -LiteralPath $scriptPath.Path -Raw
+          $requiredMarkers = @(
+            'poscam-update-server-local',
+            'poscam-update-server:local',
+            'poscam-internal',
+            'V002__split_pccam_products.sql',
+            'PCCAM_X86',
+            'PCCAM_X64',
+            'ASPNETCORE_ENVIRONMENT=Development',
+            'UpdateStorage__PublicBaseUrl='
+          )
+
+          foreach ($marker in $requiredMarkers) {
+            if (-not $content.Contains($marker)) {
+              throw "Required local deployment marker is missing: $marker"
+            }
+          }
+
+          if ($content.Contains('ASPNETCORE_ENVIRONMENT=Production')) {
+            throw "The local Docker deployment script must not start the container in Production."
+          }
+
+          Write-Host "PowerShell syntax and local deployment safety markers verified."
+
       - name: Setup .NET
         uses: actions/setup-dotnet@v4
         with:
