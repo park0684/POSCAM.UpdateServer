@@ -8,7 +8,13 @@ namespace POSCAM.UpdateClient.Models
     /// </summary>
     internal static class UpdateProductIdentity
     {
+        /// <summary>
+        /// 기존 PC CAM 설치 프로그램의 전환용 제품 코드.
+        /// </summary>
         public const string PcCamProductCode = "PCCAM";
+
+        public const string PcCamX86ProductCode = "PCCAM_X86";
+        public const string PcCamX64ProductCode = "PCCAM_X64";
         public const string CamViewerProductCode = "CAMVIEWER";
         public const string UpdaterProductCode = "UPDATER";
         public const string X86Architecture = "x86";
@@ -38,7 +44,10 @@ namespace POSCAM.UpdateClient.Models
             if (candidateProductCode.Length == 0
                 || candidateArchitecture.Length == 0
                 || !IsSupportedProductCode(candidateProductCode)
-                || !IsSupportedArchitecture(candidateArchitecture))
+                || !IsSupportedArchitecture(candidateArchitecture)
+                || !IsCompatibleProductArchitecture(
+                    candidateProductCode,
+                    candidateArchitecture))
             {
                 return false;
             }
@@ -53,6 +62,14 @@ namespace POSCAM.UpdateClient.Models
             return string.Equals(
                     value,
                     PcCamProductCode,
+                    StringComparison.Ordinal)
+                || string.Equals(
+                    value,
+                    PcCamX86ProductCode,
+                    StringComparison.Ordinal)
+                || string.Equals(
+                    value,
+                    PcCamX64ProductCode,
                     StringComparison.Ordinal)
                 || string.Equals(
                     value,
@@ -74,6 +91,35 @@ namespace POSCAM.UpdateClient.Models
                     value,
                     X64Architecture,
                     StringComparison.Ordinal);
+        }
+
+        private static bool IsCompatibleProductArchitecture(
+            string productCode,
+            string architecture)
+        {
+            if (string.Equals(
+                    productCode,
+                    PcCamX86ProductCode,
+                    StringComparison.Ordinal))
+            {
+                return string.Equals(
+                    architecture,
+                    X86Architecture,
+                    StringComparison.Ordinal);
+            }
+
+            if (string.Equals(
+                    productCode,
+                    PcCamX64ProductCode,
+                    StringComparison.Ordinal))
+            {
+                return string.Equals(
+                    architecture,
+                    X64Architecture,
+                    StringComparison.Ordinal);
+            }
+
+            return true;
         }
     }
 }

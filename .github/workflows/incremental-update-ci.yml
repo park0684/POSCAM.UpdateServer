@@ -85,7 +85,7 @@ jobs:
           }
 
           @(
-            "ProductCode=PCCAM/CAMVIEWER/UPDATER runtime client",
+            "ProductCode=PCCAM/PCCAM_X86/PCCAM_X64/CAMVIEWER/UPDATER runtime client",
             "RuntimeArchitecture=x86",
             "TargetProductArchitecture=command-line argument",
             "TargetFramework=net48",

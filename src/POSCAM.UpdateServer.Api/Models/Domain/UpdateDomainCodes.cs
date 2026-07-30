@@ -6,13 +6,47 @@ namespace POSCAM.UpdateServer.Api.Models.Domain;
 /// </summary>
 public static class ProductCodes
 {
+    /// <summary>
+    /// 기존 PC CAM 설치 프로그램의 제품 코드.
+    /// PCCAM_X86/PCCAM_X64 전환이 완료될 때까지 유지한다.
+    /// </summary>
     public const string Pccam = "PCCAM";
+
+    public const string PccamX86 = "PCCAM_X86";
+    public const string PccamX64 = "PCCAM_X64";
     public const string CamViewer = "CAMVIEWER";
     public const string Updater = "UPDATER";
 
     public static bool IsSupported(string? value)
     {
-        return value is Pccam or CamViewer or Updater;
+        return value is Pccam
+            or PccamX86
+            or PccamX64
+            or CamViewer
+            or Updater;
+    }
+
+    /// <summary>
+    /// 제품 코드와 실제 설치 프로그램 아키텍처 조합이 유효한지 확인한다.
+    /// 레거시 PCCAM은 전환 기간 동안 x86과 x64를 모두 허용한다.
+    /// </summary>
+    public static bool IsArchitectureCompatible(
+        string? productCode,
+        string? architecture)
+    {
+        if (!IsSupported(productCode)
+            || architecture is not ArtifactArchitectures.X86
+                and not ArtifactArchitectures.X64)
+        {
+            return false;
+        }
+
+        return productCode switch
+        {
+            PccamX86 => architecture == ArtifactArchitectures.X86,
+            PccamX64 => architecture == ArtifactArchitectures.X64,
+            _ => true
+        };
     }
 }
 
