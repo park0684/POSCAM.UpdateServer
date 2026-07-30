@@ -68,8 +68,9 @@ jobs:
           }
 
           foreach ($marker in @(
-            'Normalize-ConnectionStringKey',
-            'Applied case-insensitive connection-string parser for this deployment run.',
+            '$Builder.TryGetValue($candidate',
+            '$key.ToLowerInvariant()',
+            'Applied direct case-insensitive connection-string lookup for this deployment run.',
             'Restored the original Deploy-LocalDockerTest.ps1 bytes.',
             '.poscam-local-docker-parser.lock'
           )) {
