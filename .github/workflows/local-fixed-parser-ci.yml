@@ -45,6 +45,25 @@ jobs:
             throw 'Deploy-LocalDockerTest-Fixed.ps1 contains PowerShell syntax errors.'
           }
 
+      - name: Diagnose connection-string builder lookup
+        shell: pwsh
+        run: |
+          $builder = New-Object System.Data.Common.DbConnectionStringBuilder
+          $builder.ConnectionString = 'server=poscam-db-new;port=3306;database=poscam_update;user id=test_user;password=test_password;'
+
+          Write-Host "Type=$($builder.GetType().FullName)"
+          Write-Host "ConnectionString=$($builder.ConnectionString)"
+          Write-Host "KeysCount=$($builder.Keys.Count)"
+          foreach ($actualKey in $builder.Keys) {
+            Write-Host "Key=[$actualKey] Value=[$($builder[$actualKey])]"
+          }
+
+          foreach ($candidate in @('Server', 'server', 'SERVER', 'Database', 'database', 'User ID', 'user id')) {
+            $value = $null
+            $tryResult = $builder.TryGetValue($candidate, [ref]$value)
+            Write-Host "Candidate=[$candidate] Contains=$($builder.ContainsKey($candidate)) Try=$tryResult Value=[$value] Indexer=[$($builder[$candidate])]"
+          }
+
       - name: Run parser self-test
         shell: pwsh
         run: |
