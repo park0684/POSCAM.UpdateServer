@@ -52,6 +52,8 @@ Set-StrictMode -Version Latest
 
 $oldAssignment = '$connectionBuilder.ConnectionString = $connectionString'
 $newAssignment = '$connectionBuilder.set_ConnectionString($connectionString)'
+$shellNormalizationLine = '$shellCommand = $shellCommand.Replace("`r", "")'
+$shellHereStringPattern = '(?ms)(^[ \t]*\$shellCommand = @''\r?\n.*?^[ \t]*''@\r?\n)'
 
 function Get-TestConnectionStringValue {
     param(
@@ -99,7 +101,19 @@ if ($ParserSelfTest) {
         throw "Connection-string setter self-test failed for User ID. Actual=$user"
     }
 
+    $shellSample = "if true; then`r`n  echo ok`r`nfi"
+    $normalizedShellSample = $shellSample.Replace("`r", "")
+
+    if ($normalizedShellSample.Contains("`r")) {
+        throw "Docker shell line-ending self-test still contains carriage returns."
+    }
+
+    if (-not $normalizedShellSample.Contains("`n")) {
+        throw "Docker shell line-ending self-test removed line feeds unexpectedly."
+    }
+
     Write-Host "Explicit DbConnectionStringBuilder setter self-test passed."
+    Write-Host "Docker shell line-ending normalization self-test passed."
     return
 }
 
@@ -128,7 +142,7 @@ foreach ($requiredPath in @($baseScriptPath, $selectedDbScriptPath)) {
 
 $lockStream = $null
 $originalBytes = $null
-$assignmentPatched = $false
+$baseScriptPatched = $false
 
 try {
     try {
@@ -145,18 +159,48 @@ try {
     $originalBytes = [System.IO.File]::ReadAllBytes($baseScriptPath)
     $utf8 = New-Object System.Text.UTF8Encoding($false)
     $baseScriptContent = $utf8.GetString($originalBytes)
+    $patchedContent = $baseScriptContent
 
-    if ($baseScriptContent.Contains($oldAssignment)) {
-        $patchedContent = $baseScriptContent.Replace($oldAssignment, $newAssignment)
-        [System.IO.File]::WriteAllText($baseScriptPath, $patchedContent, $utf8)
-        $assignmentPatched = $true
+    if ($patchedContent.Contains($oldAssignment)) {
+        $patchedContent = $patchedContent.Replace($oldAssignment, $newAssignment)
         Write-Host "Applied explicit DbConnectionStringBuilder setter for this deployment run."
     }
-    elseif ($baseScriptContent.Contains($newAssignment)) {
+    elseif ($patchedContent.Contains($newAssignment)) {
         Write-Host "Base deployment script already uses the explicit connection-string setter."
     }
     else {
         throw "Expected DbConnectionStringBuilder assignment was not found in Deploy-LocalDockerTest.ps1."
+    }
+
+    if (-not $patchedContent.Contains($shellNormalizationLine)) {
+        $shellMatches = [regex]::Matches($patchedContent, $shellHereStringPattern)
+
+        if ($shellMatches.Count -ne 2) {
+            throw "Expected two Docker shell command here-strings but found $($shellMatches.Count)."
+        }
+
+        for ($index = $shellMatches.Count - 1; $index -ge 0; $index--) {
+            $match = $shellMatches[$index]
+            $closingLine = [regex]::Match($match.Value, "(?m)^(?<indent>[ \t]*)'@\r?\n$")
+
+            if (-not $closingLine.Success) {
+                throw "Unable to determine Docker shell command indentation."
+            }
+
+            $indent = $closingLine.Groups["indent"].Value
+            $insertion = $indent + $shellNormalizationLine + [Environment]::NewLine
+            $patchedContent = $patchedContent.Insert($match.Index + $match.Length, $insertion)
+        }
+
+        Write-Host "Applied Docker shell CRLF normalization for this deployment run."
+    }
+    else {
+        Write-Host "Base deployment script already normalizes Docker shell line endings."
+    }
+
+    if ($patchedContent -ne $baseScriptContent) {
+        [System.IO.File]::WriteAllText($baseScriptPath, $patchedContent, $utf8)
+        $baseScriptPatched = $true
     }
 
     $parameters = @{
@@ -178,7 +222,7 @@ try {
     & $selectedDbScriptPath @parameters
 }
 finally {
-    if ($assignmentPatched -and $null -ne $originalBytes) {
+    if ($baseScriptPatched -and $null -ne $originalBytes) {
         [System.IO.File]::WriteAllBytes($baseScriptPath, $originalBytes)
         Write-Host "Restored the original Deploy-LocalDockerTest.ps1 bytes."
     }
