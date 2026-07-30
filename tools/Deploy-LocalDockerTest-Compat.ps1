@@ -103,8 +103,166 @@ function Remove-ConnectionStringWrapper {
     return $normalized
 }
 
+function Invoke-DockerCapture {
+    param(
+        [Parameter(Mandatory = $true)]
+        [string[]]$Arguments,
+
+        [Parameter(Mandatory = $false)]
+        [switch]$Sensitive
+    )
+
+    $output = & docker @Arguments 2>&1
+    $exitCode = $LASTEXITCODE
+
+    if ($exitCode -ne 0) {
+        if ($Sensitive) {
+            throw "Docker command failed. ExitCode=$exitCode"
+        }
+
+        throw "Docker command failed. ExitCode=$exitCode Arguments=$($Arguments -join ' ') Output=$($output -join [Environment]::NewLine)"
+    }
+
+    return (($output | ForEach-Object { $_.ToString() }) -join [Environment]::NewLine).Trim()
+}
+
+function Get-RunningContainerNames {
+    $raw = Invoke-DockerCapture -Arguments @("ps", "--format", "{{.Names}}")
+
+    if ([string]::IsNullOrWhiteSpace($raw)) {
+        return @()
+    }
+
+    return @($raw -split "`r?`n" | Where-Object {
+        -not [string]::IsNullOrWhiteSpace($_)
+    })
+}
+
+function Get-ContainerEnvironmentMap {
+    param([Parameter(Mandatory = $true)][string]$Container)
+
+    $raw = Invoke-DockerCapture `
+        -Arguments @("inspect", "--format", "{{range .Config.Env}}{{println .}}{{end}}", $Container) `
+        -Sensitive
+
+    $result = @{}
+
+    foreach ($line in @($raw -split "`r?`n")) {
+        if ([string]::IsNullOrWhiteSpace($line)) {
+            continue
+        }
+
+        $separatorIndex = $line.IndexOf('=')
+        if ($separatorIndex -le 0) {
+            continue
+        }
+
+        $key = $line.Substring(0, $separatorIndex)
+        $value = $line.Substring($separatorIndex + 1)
+        $result[$key] = $value
+    }
+
+    return $result
+}
+
+function Get-EnvironmentValue {
+    param(
+        [Parameter(Mandatory = $true)][hashtable]$Environment,
+        [Parameter(Mandatory = $true)][string[]]$Keys,
+        [Parameter(Mandatory = $false)][string]$DefaultValue = ""
+    )
+
+    foreach ($key in $Keys) {
+        if ($Environment.ContainsKey($key) -and
+            -not [string]::IsNullOrWhiteSpace([string]$Environment[$key])) {
+            return [string]$Environment[$key]
+        }
+    }
+
+    return $DefaultValue
+}
+
+function Get-ContainerFileValue {
+    param(
+        [Parameter(Mandatory = $true)][string]$Container,
+        [Parameter(Mandatory = $true)][string]$Path
+    )
+
+    if ([string]::IsNullOrWhiteSpace($Path)) {
+        return ""
+    }
+
+    try {
+        return Invoke-DockerCapture `
+            -Arguments @("exec", $Container, "sh", "-lc", "cat -- '$Path'") `
+            -Sensitive
+    }
+    catch {
+        return ""
+    }
+}
+
+function Get-EnvironmentOrFileValue {
+    param(
+        [Parameter(Mandatory = $true)][string]$Container,
+        [Parameter(Mandatory = $true)][hashtable]$Environment,
+        [Parameter(Mandatory = $true)][string[]]$ValueKeys,
+        [Parameter(Mandatory = $true)][string[]]$FileKeys
+    )
+
+    $directValue = Get-EnvironmentValue -Environment $Environment -Keys $ValueKeys
+    if (-not [string]::IsNullOrWhiteSpace($directValue)) {
+        return $directValue
+    }
+
+    $filePath = Get-EnvironmentValue -Environment $Environment -Keys $FileKeys
+    return Get-ContainerFileValue -Container $Container -Path $filePath
+}
+
+function Resolve-LocalDatabaseContainer {
+    param(
+        [Parameter(Mandatory = $true)][string]$ConfiguredContainer,
+        [Parameter(Mandatory = $true)][string]$ParsedServer
+    )
+
+    $allowedContainers = @("poscam-db-new", "poscam-db")
+    $running = Get-RunningContainerNames
+
+    if (-not [string]::IsNullOrWhiteSpace($ConfiguredContainer)) {
+        if ($allowedContainers -notcontains $ConfiguredContainer) {
+            throw "Only local database containers are allowed: $($allowedContainers -join ', ')"
+        }
+
+        if ($running -notcontains $ConfiguredContainer) {
+            throw "Configured local database container is not running: $ConfiguredContainer"
+        }
+
+        return $ConfiguredContainer
+    }
+
+    if ($allowedContainers -contains $ParsedServer -and $running -contains $ParsedServer) {
+        return $ParsedServer
+    }
+
+    $candidates = @($allowedContainers | Where-Object { $running -contains $_ })
+
+    if ($candidates.Count -eq 1) {
+        return $candidates[0]
+    }
+
+    if ($candidates.Count -gt 1) {
+        throw "Multiple local database containers are running. Specify one explicitly with -DatabaseContainer. Candidates=$($candidates -join ', ')"
+    }
+
+    throw "No approved local MariaDB container is running. Expected=poscam-db-new or poscam-db"
+}
+
 if (-not (Test-Path -LiteralPath $ConnectionStringPath -PathType Leaf)) {
     throw "UpdateServer connection string secret was not found: $ConnectionStringPath"
+}
+
+if ($null -eq (Get-Command docker -ErrorAction SilentlyContinue)) {
+    throw "Docker CLI was not found. Start Docker Desktop and ensure docker.exe is on PATH."
 }
 
 $rawConnectionString = Get-Content -LiteralPath $ConnectionStringPath -Raw
@@ -114,41 +272,100 @@ if ([string]::IsNullOrWhiteSpace($connectionString)) {
     throw "UpdateServer connection string secret is empty."
 }
 
-$builder = New-Object System.Data.Common.DbConnectionStringBuilder
+$parsedBuilder = New-Object System.Data.Common.DbConnectionStringBuilder
 try {
-    $builder.ConnectionString = $connectionString
+    $parsedBuilder.ConnectionString = $connectionString
 }
 catch {
-    throw "UpdateServer connection string could not be parsed. Check only its key/value format; the secret value was not logged. $($_.Exception.Message)"
+    Write-Warning "The existing secret is not a standard ADO.NET connection string. Local Docker container settings will be used without logging the secret."
+    $parsedBuilder = New-Object System.Data.Common.DbConnectionStringBuilder
 }
 
-$dbServer = Get-NormalizedConnectionStringValue `
-    -Builder $builder `
+$parsedServer = Get-NormalizedConnectionStringValue `
+    -Builder $parsedBuilder `
     -Aliases @("Server", "Host", "Data Source", "Address", "Addr", "Network Address")
-$dbName = Get-NormalizedConnectionStringValue `
-    -Builder $builder `
+$parsedDatabase = Get-NormalizedConnectionStringValue `
+    -Builder $parsedBuilder `
     -Aliases @("Database", "Initial Catalog", "Database Name", "DatabaseName", "Catalog", "Db")
+$parsedUser = Get-NormalizedConnectionStringValue `
+    -Builder $parsedBuilder `
+    -Aliases @("User ID", "Uid", "Username", "User")
+$parsedPassword = Get-NormalizedConnectionStringValue `
+    -Builder $parsedBuilder `
+    -Aliases @("Password", "Pwd")
 
-$allowedLocalServers = @(
-    "localhost",
-    "127.0.0.1",
-    "host.docker.internal",
-    "poscam-db",
-    "poscam-db-new"
-)
+$resolvedDatabaseContainer = Resolve-LocalDatabaseContainer `
+    -ConfiguredContainer $DatabaseContainer `
+    -ParsedServer $parsedServer
 
+$databaseEnvironment = Get-ContainerEnvironmentMap -Container $resolvedDatabaseContainer
+
+$containerDatabase = Get-EnvironmentValue `
+    -Environment $databaseEnvironment `
+    -Keys @("MARIADB_DATABASE", "MYSQL_DATABASE")
+
+$dbName = $parsedDatabase
 if ([string]::IsNullOrWhiteSpace($dbName)) {
-    if ($allowedLocalServers -notcontains $dbServer.ToLowerInvariant()) {
-        throw "The database name is missing and the server is not an approved local target. Server=$dbServer"
+    if (-not [string]::IsNullOrWhiteSpace($containerDatabase)) {
+        $dbName = $containerDatabase
     }
+    else {
+        $dbName = "poscam_update"
+    }
+}
 
-    $builder["Database"] = "poscam_update"
-    $dbName = "poscam_update"
-    Write-Host "Database key was missing. Added Database=poscam_update to a temporary local-only connection string."
+if ($dbName -ne "poscam_update") {
+    throw "This deployment is restricted to the local poscam_update database. Actual=$dbName Container=$resolvedDatabaseContainer"
 }
-elseif ($dbName -ne "poscam_update") {
-    throw "This deployment is restricted to the local poscam_update database. Actual=$dbName"
+
+$dbUser = $parsedUser
+$dbPassword = $parsedPassword
+
+if ([string]::IsNullOrWhiteSpace($dbUser)) {
+    $dbUser = Get-EnvironmentValue `
+        -Environment $databaseEnvironment `
+        -Keys @("MARIADB_USER", "MYSQL_USER")
 }
+
+if ([string]::IsNullOrWhiteSpace($dbPassword)) {
+    $dbPassword = Get-EnvironmentOrFileValue `
+        -Container $resolvedDatabaseContainer `
+        -Environment $databaseEnvironment `
+        -ValueKeys @("MARIADB_PASSWORD", "MYSQL_PASSWORD") `
+        -FileKeys @("MARIADB_PASSWORD_FILE", "MYSQL_PASSWORD_FILE")
+}
+
+if ([string]::IsNullOrWhiteSpace($dbUser) -or
+    [string]::IsNullOrWhiteSpace($dbPassword)) {
+    $rootPassword = Get-EnvironmentOrFileValue `
+        -Container $resolvedDatabaseContainer `
+        -Environment $databaseEnvironment `
+        -ValueKeys @("MARIADB_ROOT_PASSWORD", "MYSQL_ROOT_PASSWORD") `
+        -FileKeys @("MARIADB_ROOT_PASSWORD_FILE", "MYSQL_ROOT_PASSWORD_FILE")
+
+    if (-not [string]::IsNullOrWhiteSpace($rootPassword)) {
+        $dbUser = "root"
+        $dbPassword = $rootPassword
+    }
+}
+
+if ([string]::IsNullOrWhiteSpace($dbUser) -or
+    [string]::IsNullOrWhiteSpace($dbPassword)) {
+    throw "Database credentials could not be resolved from the existing secret or the selected local database container. Container=$resolvedDatabaseContainer"
+}
+
+$normalizedBuilder = New-Object System.Data.Common.DbConnectionStringBuilder
+$normalizedBuilder["Server"] = $resolvedDatabaseContainer
+$normalizedBuilder["Port"] = "3306"
+$normalizedBuilder["Database"] = $dbName
+$normalizedBuilder["User ID"] = $dbUser
+$normalizedBuilder["Password"] = $dbPassword
+$normalizedBuilder["SslMode"] = "None"
+$normalizedBuilder["AllowPublicKeyRetrieval"] = "True"
+
+Write-Host "Selected local database container: $resolvedDatabaseContainer"
+Write-Host "Normalized database target: $dbName"
+Write-Host "Database credentials resolved without logging secret values."
 
 $scriptDirectory = Split-Path -Parent $MyInvocation.MyCommand.Path
 $deploymentScript = Join-Path $scriptDirectory "Deploy-LocalDockerTest.ps1"
@@ -165,7 +382,7 @@ try {
     $utf8WithoutBom = New-Object System.Text.UTF8Encoding($false)
     [System.IO.File]::WriteAllText(
         $tempConnectionStringPath,
-        $builder.ConnectionString,
+        $normalizedBuilder.ConnectionString,
         $utf8WithoutBom)
 
     $deploymentParameters = @{
@@ -179,7 +396,7 @@ try {
         StorageHostPath = $StorageHostPath
         InternalServiceKeyPath = $InternalServiceKeyPath
         ConnectionStringPath = $tempConnectionStringPath
-        DatabaseContainer = $DatabaseContainer
+        DatabaseContainer = $resolvedDatabaseContainer
         SkipMigration = $SkipMigration
         PullBaseImages = $PullBaseImages
         RemoveBackupOnSuccess = $RemoveBackupOnSuccess
