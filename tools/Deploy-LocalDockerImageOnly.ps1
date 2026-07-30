@@ -135,6 +135,31 @@ function Wait-ReadyHealth {
     throw "Ready health check failed: $Uri LastError=$($lastError.Exception.Message)"
 }
 
+function Test-LocalHttpUrl {
+    param(
+        [Parameter(Mandatory = $true)][string]$Value,
+        [Parameter(Mandatory = $true)][string]$Description,
+        [Parameter(Mandatory = $false)][switch]$AllowDockerHost
+    )
+
+    $allowedPrefixes = @(
+        "http://127.0.0.1:",
+        "http://localhost:"
+    )
+
+    if ($AllowDockerHost) {
+        $allowedPrefixes += "http://host.docker.internal:"
+    }
+
+    foreach ($prefix in $allowedPrefixes) {
+        if ($Value.StartsWith($prefix, [System.StringComparison]::OrdinalIgnoreCase)) {
+            return
+        }
+    }
+
+    throw "$Description must use an approved local HTTP address. Actual=$Value"
+}
+
 $scriptDirectory = Split-Path -Parent $MyInvocation.MyCommand.Path
 $repositoryRoot = [System.IO.Path]::GetFullPath((Join-Path $scriptDirectory ".."))
 $dockerfilePath = Join-Path $repositoryRoot "Dockerfile"
@@ -161,19 +186,15 @@ if ($NetworkName -ne "poscam-internal") {
     throw "This script is restricted to the local Docker network: poscam-internal"
 }
 
-if (-not $UpdateStoragePublicBaseUrl.StartsWith("http://127.0.0.1:", [System.StringComparison]::OrdinalIgnoreCase)) {
-    throw "UpdateStoragePublicBaseUrl must use the local 127.0.0.1 host."
-}
+Test-LocalHttpUrl -Value $AuthServerBaseUrl -Description "AuthServerBaseUrl" -AllowDockerHost
+Test-LocalHttpUrl -Value $UpdateStoragePublicBaseUrl -Description "UpdateStoragePublicBaseUrl"
 
 if ($AdminWebOrigins.Count -lt 1) {
     throw "At least one local AdminWeb CORS origin is required."
 }
 
 foreach ($origin in $AdminWebOrigins) {
-    if (-not ($origin.StartsWith("http://127.0.0.1:", [System.StringComparison]::OrdinalIgnoreCase) -or
-              $origin.StartsWith("http://localhost:", [System.StringComparison]::OrdinalIgnoreCase))) {
-        throw "Only loopback AdminWeb origins are allowed: $origin"
-    }
+    Test-LocalHttpUrl -Value $origin -Description "AdminWeb origin"
 }
 
 if ($null -eq (Get-Command docker -ErrorAction SilentlyContinue)) {
@@ -221,6 +242,10 @@ $existingContainerFound = $allContainers -contains $ContainerName
 $backupCreated = $false
 $oldImageId = ""
 $wasRunning = $false
+
+if ($allContainers -contains $backupContainerName) {
+    throw "Backup container name already exists: $backupContainerName"
+}
 
 if ($existingContainerFound) {
     $oldImageId = Invoke-Docker -Arguments @("inspect", "--format", "{{.Image}}", $ContainerName) -Capture
@@ -307,7 +332,8 @@ try {
     }
 }
 catch {
-    Write-Error "Local image deployment verification failed. Rolling back. $($_.Exception.Message)"
+    $deploymentError = $_
+    Write-Warning "Local image deployment verification failed. Rolling back. $($deploymentError.Exception.Message)"
 
     try {
         $currentContainers = Get-AllContainerNames
@@ -324,10 +350,10 @@ catch {
         }
     }
     catch {
-        Write-Error "Automatic rollback failed. $($_.Exception.Message)"
+        Write-Warning "Automatic rollback failed. $($_.Exception.Message)"
     }
 
-    throw
+    throw $deploymentError
 }
 
 Write-Step "Local Docker image deployment completed"
