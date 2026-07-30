@@ -20,24 +20,33 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v4
 
-      - name: Validate local Docker deployment script
+      - name: Validate local Docker deployment scripts
         shell: pwsh
         run: |
-          $scriptPath = Resolve-Path ".\tools\Deploy-LocalDockerTest.ps1"
-          $tokens = $null
-          $errors = $null
+          $scriptPaths = @(
+            ".\tools\Deploy-LocalDockerTest.ps1",
+            ".\tools\Deploy-LocalDockerTest-Compat.ps1"
+          )
 
-          [System.Management.Automation.Language.Parser]::ParseFile(
-            $scriptPath.Path,
-            [ref]$tokens,
-            [ref]$errors) | Out-Null
+          foreach ($scriptPathText in $scriptPaths) {
+            $scriptPath = Resolve-Path $scriptPathText
+            $tokens = $null
+            $errors = $null
 
-          if ($errors.Count -gt 0) {
-            $errors | ForEach-Object { Write-Error $_.Message }
-            throw "Deploy-LocalDockerTest.ps1 contains PowerShell syntax errors."
+            [System.Management.Automation.Language.Parser]::ParseFile(
+              $scriptPath.Path,
+              [ref]$tokens,
+              [ref]$errors) | Out-Null
+
+            if ($errors.Count -gt 0) {
+              $errors | ForEach-Object { Write-Error $_.Message }
+              throw "$scriptPathText contains PowerShell syntax errors."
+            }
+
+            Write-Host "PowerShell syntax verified: $($scriptPath.Path)"
           }
 
-          $content = Get-Content -LiteralPath $scriptPath.Path -Raw
+          $deploymentContent = Get-Content -LiteralPath ".\tools\Deploy-LocalDockerTest.ps1" -Raw
           $requiredMarkers = @(
             'poscam-update-server-local',
             'poscam-update-server:local',
@@ -50,13 +59,32 @@ jobs:
           )
 
           foreach ($marker in $requiredMarkers) {
-            if (-not $content.Contains($marker)) {
+            if (-not $deploymentContent.Contains($marker)) {
               throw "Required local deployment marker is missing: $marker"
             }
           }
 
-          if ($content.Contains('ASPNETCORE_ENVIRONMENT=Production')) {
+          if ($deploymentContent.Contains('ASPNETCORE_ENVIRONMENT=Production')) {
             throw "The local Docker deployment script must not start the container in Production."
+          }
+
+          $compatContent = Get-Content -LiteralPath ".\tools\Deploy-LocalDockerTest-Compat.ps1" -Raw
+          $compatMarkers = @(
+            'Database=poscam_update',
+            'host.docker.internal',
+            'Deploy-LocalDockerTest.ps1',
+            'WriteAllText',
+            'Remove-Item'
+          )
+
+          foreach ($marker in $compatMarkers) {
+            if (-not $compatContent.Contains($marker)) {
+              throw "Required compatibility launcher marker is missing: $marker"
+            }
+          }
+
+          if ($compatContent.Contains('ASPNETCORE_ENVIRONMENT=Production')) {
+            throw "The compatibility launcher must not contain a Production deployment override."
           }
 
           Write-Host "PowerShell syntax and local deployment safety markers verified."
