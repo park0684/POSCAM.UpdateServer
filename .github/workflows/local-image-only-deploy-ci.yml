@@ -1,0 +1,82 @@
+name: Local Image-Only Deploy CI
+
+on:
+  pull_request:
+    branches:
+      - master
+    paths:
+      - tools/Deploy-LocalDockerImageOnly.ps1
+      - .github/workflows/local-image-only-deploy-ci.yml
+      - docs/deployment/local-docker-image-only.md
+  push:
+    branches:
+      - master
+    paths:
+      - tools/Deploy-LocalDockerImageOnly.ps1
+      - .github/workflows/local-image-only-deploy-ci.yml
+      - docs/deployment/local-docker-image-only.md
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  validate-image-only-deploy:
+    runs-on: windows-latest
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Validate PowerShell syntax
+        shell: pwsh
+        run: |
+          $scriptPath = Resolve-Path '.\tools\Deploy-LocalDockerImageOnly.ps1'
+          $tokens = $null
+          $errors = $null
+
+          [System.Management.Automation.Language.Parser]::ParseFile(
+            $scriptPath.Path,
+            [ref]$tokens,
+            [ref]$errors) | Out-Null
+
+          if ($errors.Count -gt 0) {
+            $errors | ForEach-Object { Write-Error $_.Message }
+            throw 'Deploy-LocalDockerImageOnly.ps1 contains PowerShell syntax errors.'
+          }
+
+      - name: Verify DB-independent scope
+        shell: pwsh
+        run: |
+          $content = Get-Content -LiteralPath '.\tools\Deploy-LocalDockerImageOnly.ps1' -Raw
+
+          foreach ($forbiddenMarker in @(
+            'V002__split_pccam_products.sql',
+            'update_products',
+            'DatabaseContainer',
+            'Invoke-DatabaseScript',
+            'Get-ProductRows',
+            'mariadb --user',
+            'mysql --user',
+            'PCCAM_X86',
+            'PCCAM_X64'
+          )) {
+            if ($content.Contains($forbiddenMarker)) {
+              throw "Image-only deploy script must not contain DB/product seed logic: $forbiddenMarker"
+            }
+          }
+
+          foreach ($requiredMarker in @(
+            'poscam-update-server-local',
+            'poscam-update-server:local',
+            '127.0.0.1:${HostPort}:8080',
+            'Wait-ReadyHealth',
+            'Rolling back',
+            'Database seed: not executed'
+          )) {
+            if (-not $content.Contains($requiredMarker)) {
+              throw "Required image-only deployment marker is missing: $requiredMarker"
+            }
+          }
+
+          Write-Host 'Image-only local Docker deployment scope is valid.'
