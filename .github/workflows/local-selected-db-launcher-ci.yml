@@ -1,0 +1,61 @@
+name: Local Selected DB Launcher CI
+
+on:
+  pull_request:
+    branches:
+      - master
+  push:
+    branches:
+      - master
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  validate-launcher:
+    runs-on: windows-latest
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Validate PowerShell syntax and safety markers
+        shell: pwsh
+        run: |
+          $scriptPath = Resolve-Path ".\tools\Deploy-LocalDockerTest-SelectedDb.ps1"
+          $tokens = $null
+          $errors = $null
+
+          [System.Management.Automation.Language.Parser]::ParseFile(
+            $scriptPath.Path,
+            [ref]$tokens,
+            [ref]$errors) | Out-Null
+
+          if ($errors.Count -gt 0) {
+            $errors | ForEach-Object { Write-Error $_.Message }
+            throw "Deploy-LocalDockerTest-SelectedDb.ps1 contains PowerShell syntax errors."
+          }
+
+          $content = Get-Content -LiteralPath $scriptPath.Path -Raw
+          $requiredMarkers = @(
+            'ValidateSet("poscam-db-new", "poscam-db")',
+            'poscam-update-server-local',
+            'poscam-update-server:local',
+            'Database=poscam_update',
+            'Deploy-LocalDockerTest-Compat.ps1',
+            'WriteAllText',
+            'Remove-Item'
+          )
+
+          foreach ($marker in $requiredMarkers) {
+            if (-not $content.Contains($marker)) {
+              throw "Required selected DB launcher marker is missing: $marker"
+            }
+          }
+
+          if ($content.Contains('ASPNETCORE_ENVIRONMENT=Production')) {
+            throw "The selected DB launcher must not contain a Production deployment override."
+          }
+
+          Write-Host "Selected DB launcher syntax and safety markers verified."
