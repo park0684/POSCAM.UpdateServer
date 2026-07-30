@@ -74,12 +74,6 @@ function Get-ConnectionStringValue {
 '@
 
 $newParser = @'
-function Normalize-ConnectionStringKey {
-    param([Parameter(Mandatory = $true)][string]$Value)
-
-    return (($Value -replace '[\s_\-]', '').ToLowerInvariant())
-}
-
 function Get-ConnectionStringValue {
     param(
         [Parameter(Mandatory = $true)]
@@ -92,14 +86,18 @@ function Get-ConnectionStringValue {
         [string]$DefaultValue = ""
     )
 
-    $normalizedKeys = @($Keys | ForEach-Object {
-        Normalize-ConnectionStringKey -Value $_
-    })
+    foreach ($key in $Keys) {
+        $candidates = @(
+            $key,
+            $key.ToLowerInvariant(),
+            $key.ToUpperInvariant()
+        ) | Select-Object -Unique
 
-    foreach ($actualKey in $Builder.Keys) {
-        $normalizedActualKey = Normalize-ConnectionStringKey -Value ([string]$actualKey)
-        if ($normalizedKeys -contains $normalizedActualKey) {
-            return [string]$Builder[[string]$actualKey]
+        foreach ($candidate in $candidates) {
+            $resolvedValue = $null
+            if ($Builder.TryGetValue($candidate, [ref]$resolvedValue)) {
+                return [string]$resolvedValue
+            }
         }
     }
 
@@ -180,10 +178,10 @@ try {
         $patchedContent = $baseScriptContent.Replace($oldParser, $newParser)
         [System.IO.File]::WriteAllText($baseScriptPath, $patchedContent, $utf8)
         $parserPatched = $true
-        Write-Host "Applied case-insensitive connection-string parser for this deployment run."
+        Write-Host "Applied direct case-insensitive connection-string lookup for this deployment run."
     }
-    elseif ($baseScriptContent.Contains("function Normalize-ConnectionStringKey")) {
-        Write-Host "Base deployment script already contains the case-insensitive parser."
+    elseif ($baseScriptContent.Contains("$Builder.TryGetValue($candidate")) {
+        Write-Host "Base deployment script already contains the direct case-insensitive parser."
     }
     else {
         throw "Expected connection-string parser block was not found in Deploy-LocalDockerTest.ps1."
