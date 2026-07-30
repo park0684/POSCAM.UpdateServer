@@ -61,14 +61,14 @@ jobs:
             throw "Explicit setter did not parse connection-string keys. KeysCount=$($builder.Keys.Count)"
           }
 
-      - name: Run setter self-test
+      - name: Run setter and shell normalization self-test
         shell: pwsh
         run: |
           .\tools\Deploy-LocalDockerTest-Fixed.ps1 `
             -DatabaseContainer poscam-db-new `
             -ParserSelfTest
 
-      - name: Verify base assignment patch target
+      - name: Verify runtime patch targets
         shell: pwsh
         run: |
           $baseContent = Get-Content -LiteralPath '.\tools\Deploy-LocalDockerTest.ps1' -Raw
@@ -78,9 +78,18 @@ jobs:
             throw 'Expected base ConnectionString assignment was not found.'
           }
 
+          $shellHereStringCount = ([regex]::Matches(
+            $baseContent,
+            '(?ms)(^[ \t]*\$shellCommand = @''\r?\n.*?^[ \t]*''@\r?\n)')).Count
+
+          if ($shellHereStringCount -ne 2) {
+            throw "Expected two Docker shell command here-strings. Actual=$shellHereStringCount"
+          }
+
           foreach ($marker in @(
             '$connectionBuilder.set_ConnectionString($connectionString)',
-            'Applied explicit DbConnectionStringBuilder setter for this deployment run.',
+            '$shellCommand = $shellCommand.Replace("`r", "")',
+            'Applied Docker shell CRLF normalization for this deployment run.',
             'Restored the original Deploy-LocalDockerTest.ps1 bytes.',
             '.poscam-local-docker-parser.lock'
           )) {
@@ -89,4 +98,4 @@ jobs:
             }
           }
 
-          Write-Host 'Explicit connection-string setter launcher validation passed.'
+          Write-Host 'Connection-string setter and Docker shell normalization validation passed.'
