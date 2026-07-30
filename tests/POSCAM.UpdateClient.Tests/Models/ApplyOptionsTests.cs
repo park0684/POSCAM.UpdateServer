@@ -33,6 +33,27 @@ namespace POSCAM.UpdateClient.Tests.Models
                 options.WaitTimeoutSeconds);
         }
 
+        [Theory]
+        [InlineData("pccam_x86", "X86", "PCCAM_X86", "x86")]
+        [InlineData("pccam_x64", "X64", "PCCAM_X64", "x64")]
+        public void TryParse_SplitPcCamIdentity_Normalizes(
+            string productCode,
+            string architecture,
+            string expectedProductCode,
+            string expectedArchitecture)
+        {
+            var args = CreateRequiredArguments("12");
+            args[8] = productCode;
+            args[10] = architecture;
+
+            var success = ApplyOptions.TryParse(args, out var options);
+
+            Assert.True(success);
+            Assert.NotNull(options);
+            Assert.Equal(expectedProductCode, options!.ProductCode);
+            Assert.Equal(expectedArchitecture, options.Architecture);
+        }
+
         [Fact]
         public void TryParse_CustomTimeout_IsApplied()
         {
@@ -100,6 +121,8 @@ namespace POSCAM.UpdateClient.Tests.Models
         [InlineData("UNKNOWN", "x86")]
         [InlineData("PCCAM", "any")]
         [InlineData("PCCAM", "arm64")]
+        [InlineData("PCCAM_X86", "x64")]
+        [InlineData("PCCAM_X64", "x86")]
         public void TryParse_UnsupportedIdentity_IsRejected(
             string productCode,
             string architecture)
