@@ -50,8 +50,10 @@ param(
 $ErrorActionPreference = "Stop"
 Set-StrictMode -Version Latest
 
-$oldParser = @'
-function Get-ConnectionStringValue {
+$oldAssignment = '$connectionBuilder.ConnectionString = $connectionString'
+$newAssignment = '$connectionBuilder.set_ConnectionString($connectionString)'
+
+function Get-TestConnectionStringValue {
     param(
         [Parameter(Mandatory = $true)]
         [System.Data.Common.DbConnectionStringBuilder]$Builder,
@@ -71,63 +73,33 @@ function Get-ConnectionStringValue {
 
     return $DefaultValue
 }
-'@
-
-$newParser = @'
-function Get-ConnectionStringValue {
-    param(
-        [Parameter(Mandatory = $true)]
-        [System.Data.Common.DbConnectionStringBuilder]$Builder,
-
-        [Parameter(Mandatory = $true)]
-        [string[]]$Keys,
-
-        [Parameter(Mandatory = $false)]
-        [string]$DefaultValue = ""
-    )
-
-    foreach ($key in $Keys) {
-        $candidates = @(
-            $key,
-            $key.ToLowerInvariant(),
-            $key.ToUpperInvariant()
-        ) | Select-Object -Unique
-
-        foreach ($candidate in $candidates) {
-            $resolvedValue = $null
-            if ($Builder.TryGetValue($candidate, [ref]$resolvedValue)) {
-                return [string]$resolvedValue
-            }
-        }
-    }
-
-    return $DefaultValue
-}
-'@
 
 if ($ParserSelfTest) {
-    Invoke-Expression $newParser
-
     $builder = New-Object System.Data.Common.DbConnectionStringBuilder
-    $builder.ConnectionString = "server=poscam-db-new;port=3306;database=poscam_update;user id=test_user;password=test_password;"
+    $builder.set_ConnectionString(
+        "server=poscam-db-new;port=3306;database=poscam_update;user id=test_user;password=test_password;")
 
-    $server = Get-ConnectionStringValue -Builder $builder -Keys @("Server", "Host", "Data Source")
-    $database = Get-ConnectionStringValue -Builder $builder -Keys @("Database", "Initial Catalog")
-    $user = Get-ConnectionStringValue -Builder $builder -Keys @("User ID", "Uid", "Username", "User")
+    $server = Get-TestConnectionStringValue -Builder $builder -Keys @("Server", "Host", "Data Source")
+    $database = Get-TestConnectionStringValue -Builder $builder -Keys @("Database", "Initial Catalog")
+    $user = Get-TestConnectionStringValue -Builder $builder -Keys @("User ID", "Uid", "Username", "User")
+
+    if ($builder.Keys.Count -lt 5) {
+        throw "Connection-string setter self-test did not parse individual keys. KeysCount=$($builder.Keys.Count)"
+    }
 
     if ($server -ne "poscam-db-new") {
-        throw "Parser self-test failed for Server. Actual=$server"
+        throw "Connection-string setter self-test failed for Server. Actual=$server"
     }
 
     if ($database -ne "poscam_update") {
-        throw "Parser self-test failed for Database. Actual=$database"
+        throw "Connection-string setter self-test failed for Database. Actual=$database"
     }
 
     if ($user -ne "test_user") {
-        throw "Parser self-test failed for User ID. Actual=$user"
+        throw "Connection-string setter self-test failed for User ID. Actual=$user"
     }
 
-    Write-Host "Case-insensitive local connection-string parser self-test passed."
+    Write-Host "Explicit DbConnectionStringBuilder setter self-test passed."
     return
 }
 
@@ -156,7 +128,7 @@ foreach ($requiredPath in @($baseScriptPath, $selectedDbScriptPath)) {
 
 $lockStream = $null
 $originalBytes = $null
-$parserPatched = $false
+$assignmentPatched = $false
 
 try {
     try {
@@ -174,17 +146,17 @@ try {
     $utf8 = New-Object System.Text.UTF8Encoding($false)
     $baseScriptContent = $utf8.GetString($originalBytes)
 
-    if ($baseScriptContent.Contains($oldParser)) {
-        $patchedContent = $baseScriptContent.Replace($oldParser, $newParser)
+    if ($baseScriptContent.Contains($oldAssignment)) {
+        $patchedContent = $baseScriptContent.Replace($oldAssignment, $newAssignment)
         [System.IO.File]::WriteAllText($baseScriptPath, $patchedContent, $utf8)
-        $parserPatched = $true
-        Write-Host "Applied direct case-insensitive connection-string lookup for this deployment run."
+        $assignmentPatched = $true
+        Write-Host "Applied explicit DbConnectionStringBuilder setter for this deployment run."
     }
-    elseif ($baseScriptContent.Contains("$Builder.TryGetValue($candidate")) {
-        Write-Host "Base deployment script already contains the direct case-insensitive parser."
+    elseif ($baseScriptContent.Contains($newAssignment)) {
+        Write-Host "Base deployment script already uses the explicit connection-string setter."
     }
     else {
-        throw "Expected connection-string parser block was not found in Deploy-LocalDockerTest.ps1."
+        throw "Expected DbConnectionStringBuilder assignment was not found in Deploy-LocalDockerTest.ps1."
     }
 
     $parameters = @{
@@ -206,7 +178,7 @@ try {
     & $selectedDbScriptPath @parameters
 }
 finally {
-    if ($parserPatched -and $null -ne $originalBytes) {
+    if ($assignmentPatched -and $null -ne $originalBytes) {
         [System.IO.File]::WriteAllBytes($baseScriptPath, $originalBytes)
         Write-Host "Restored the original Deploy-LocalDockerTest.ps1 bytes."
     }
