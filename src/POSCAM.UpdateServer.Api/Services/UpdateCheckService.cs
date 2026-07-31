@@ -198,6 +198,13 @@ public sealed class UpdateCheckService : IUpdateCheckService
             return InvalidStoredData();
         }
 
+        var forceFullPackage = _storageOptions.ShouldForceFullPackage(
+            release.ProductCode,
+            releaseVersion.ToString());
+        var responseFiles = forceFullPackage
+            ? Array.Empty<UpdateArtifactFileResponse>()
+            : files;
+
         var decision = UpdateDecisionEvaluator.Evaluate(
             currentVersion,
             policy);
@@ -221,7 +228,7 @@ public sealed class UpdateCheckService : IUpdateCheckService
             Sha256 = release.Sha256,
             ReleaseNotes = release.ReleaseNotes,
             PublishedAt = AsUtc(release.PublishedAt),
-            Files = files
+            Files = responseFiles
         };
 
         var message = decision.UpdateAvailable
