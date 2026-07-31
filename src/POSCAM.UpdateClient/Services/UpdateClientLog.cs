@@ -44,9 +44,7 @@ namespace POSCAM.UpdateClient.Services
         {
             var detail = exception == null
                 ? message
-                : message
-                    + " ExceptionType="
-                    + exception.GetType().Name;
+                : message + BuildExceptionDetail(exception);
 
             Write(
                 installDirectory,
@@ -120,6 +118,59 @@ namespace POSCAM.UpdateClient.Services
                 installRoot,
                 "logs",
                 fileName);
+        }
+
+        private static string BuildExceptionDetail(Exception exception)
+        {
+            var builder = new StringBuilder();
+            AppendException(builder, exception, "Exception");
+
+            if (exception.InnerException != null)
+            {
+                AppendException(
+                    builder,
+                    exception.InnerException,
+                    "InnerException");
+            }
+
+            return builder.ToString();
+        }
+
+        private static void AppendException(
+            StringBuilder builder,
+            Exception exception,
+            string prefix)
+        {
+            builder.Append(' ');
+            builder.Append(prefix);
+            builder.Append("Type=");
+            builder.Append(exception.GetType().Name);
+
+            if (!string.IsNullOrWhiteSpace(exception.Message))
+            {
+                builder.Append(' ');
+                builder.Append(prefix);
+                builder.Append("Message=");
+                builder.Append(exception.Message);
+            }
+
+            var serverException = exception as UpdateServerClientException;
+
+            if (serverException != null)
+            {
+                if (serverException.StatusCode.HasValue)
+                {
+                    builder.Append(" StatusCode=");
+                    builder.Append(
+                        (int)serverException.StatusCode.Value);
+                }
+
+                if (serverException.ErrorCode.HasValue)
+                {
+                    builder.Append(" ServerErrorCode=");
+                    builder.Append(serverException.ErrorCode.Value);
+                }
+            }
         }
 
         private static void Write(
