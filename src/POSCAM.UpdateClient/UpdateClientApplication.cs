@@ -1,5 +1,6 @@
 using System;
 using System.Diagnostics;
+using System.IO;
 using System.Threading;
 using System.Threading.Tasks;
 using POSCAM.UpdateClient.Models;
@@ -100,8 +101,12 @@ namespace POSCAM.UpdateClient
 
             var pathService = new UpdateWorkPathService();
             var hashCalculator = new FileHashCalculator();
+            var planStore = new UpdateApplyPlanStore();
+            var completionPlan = TryLoadCompletionPlan(
+                planStore,
+                options);
             var service = new UpdateApplyService(
-                new UpdateApplyPlanStore(),
+                planStore,
                 pathService,
                 new ProcessWaitService(),
                 new FileRepairApplyService(
@@ -114,10 +119,19 @@ namespace POSCAM.UpdateClient
                 new ApplicationRestartService(),
                 GetCurrentProcessId);
 
-            return await service.ApplyAsync(
+            var exitCode = await service.ApplyAsync(
                 options,
                 cancellationToken)
                 .ConfigureAwait(false);
+
+            if (exitCode == UpdateClientExitCodes.Success
+                && completionPlan != null
+                && IsCompletedFileMode(completionPlan.Mode))
+            {
+                WriteCompletionLog(completionPlan);
+            }
+
+            return exitCode;
         }
 
         private static async Task<int> RunApplyWorkerAsync(
@@ -133,8 +147,12 @@ namespace POSCAM.UpdateClient
             }
 
             var pathService = new UpdateWorkPathService();
+            var planStore = new UpdateApplyPlanStore();
+            var completionPlan = TryLoadCompletionPlan(
+                planStore,
+                options);
             var service = new UpdateApplyWorkerService(
-                new UpdateApplyPlanStore(),
+                planStore,
                 pathService,
                 new ProcessWaitService(),
                 new FullPackageApplyService(
@@ -142,10 +160,61 @@ namespace POSCAM.UpdateClient
                     new FileHashCalculator()),
                 new ApplicationRestartService());
 
-            return await service.ApplyAsync(
+            var exitCode = await service.ApplyAsync(
                 options,
                 cancellationToken)
                 .ConfigureAwait(false);
+
+            if (exitCode == UpdateClientExitCodes.Success
+                && completionPlan != null
+                && string.Equals(
+                    completionPlan.Mode,
+                    UpdateApplyModes.FullPackage,
+                    StringComparison.Ordinal))
+            {
+                WriteCompletionLog(completionPlan);
+            }
+
+            return exitCode;
+        }
+
+        private static UpdateApplyPlan? TryLoadCompletionPlan(
+            UpdateApplyPlanStore planStore,
+            ApplyOptions options)
+        {
+            try
+            {
+                var planPath = Path.GetFullPath(
+                    options.PlanPath.Trim());
+                return planStore.Load(planPath);
+            }
+            catch
+            {
+                return null;
+            }
+        }
+
+        private static bool IsCompletedFileMode(string mode)
+        {
+            return string.Equals(
+                    mode,
+                    UpdateApplyModes.FileRepair,
+                    StringComparison.Ordinal)
+                || string.Equals(
+                    mode,
+                    UpdateApplyModes.IncrementalUpdate,
+                    StringComparison.Ordinal);
+        }
+
+        private static void WriteCompletionLog(
+            UpdateApplyPlan plan)
+        {
+            UpdateClientLog.Completed(
+                plan.InstallDirectory,
+                plan.JobId,
+                plan.Mode,
+                plan.LatestVersion,
+                plan.Targets == null ? 0 : plan.Targets.Count);
         }
 
         private static int GetCurrentProcessId()
