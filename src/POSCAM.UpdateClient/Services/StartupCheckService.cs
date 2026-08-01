@@ -13,6 +13,12 @@ namespace POSCAM.UpdateClient.Services
     /// </summary>
     internal sealed class StartupCheckService
     {
+        private static readonly string[] SameVersionRepairExcludedPaths =
+        {
+            "PcCam.exe",
+            "POSCAM.UpdateClient.exe"
+        };
+
         private readonly IUpdateServerClient _updateServerClient;
         private readonly ApplicationVersionResolver _versionResolver;
         private readonly ManifestRepairPlanner _repairPlanner;
@@ -272,9 +278,11 @@ namespace POSCAM.UpdateClient.Services
             InstalledManifest? targetManifest,
             int manifestCount)
         {
+            var repairFiles = FilterSameVersionRepairFiles(
+                response.Files);
             var repairPlan = _repairPlanner.CreatePlan(
                 options.InstallDirectory,
-                response.Files);
+                repairFiles);
 
             foreach (var target in repairPlan.Targets)
             {
@@ -305,6 +313,53 @@ namespace POSCAM.UpdateClient.Services
                 RepairPlan = repairPlan,
                 TargetManifest = targetManifest
             };
+        }
+
+        private static IReadOnlyList<UpdateManifestFile>
+            FilterSameVersionRepairFiles(
+                IReadOnlyList<UpdateManifestFile>? files)
+        {
+            if (files == null || files.Count == 0)
+            {
+                return Array.Empty<UpdateManifestFile>();
+            }
+
+            var filtered = new List<UpdateManifestFile>(files.Count);
+
+            foreach (var file in files)
+            {
+                if (file != null && IsSameVersionRepairExcluded(file.Path))
+                {
+                    continue;
+                }
+
+                filtered.Add(file!);
+            }
+
+            return filtered;
+        }
+
+        private static bool IsSameVersionRepairExcluded(string? path)
+        {
+            if (string.IsNullOrWhiteSpace(path))
+            {
+                return false;
+            }
+
+            var normalizedPath = path.Trim().Replace('\\', '/');
+
+            foreach (var excludedPath in SameVersionRepairExcludedPaths)
+            {
+                if (string.Equals(
+                    normalizedPath,
+                    excludedPath,
+                    StringComparison.OrdinalIgnoreCase))
+                {
+                    return true;
+                }
+            }
+
+            return false;
         }
 
         private static InstalledManifest? CreateTargetManifest(
