@@ -1,6 +1,5 @@
 using System;
 using System.IO;
-using System.Net;
 using POSCAM.UpdateClient.Services;
 using Xunit;
 
@@ -21,41 +20,93 @@ namespace POSCAM.UpdateClient.Tests.Services
         }
 
         [Fact]
-        public void Error_WithServerException_WritesActionableDetails()
+        public void InfoAndError_DoNotCreatePersistentUpdateLog()
         {
-            var exception = new UpdateServerClientException(
-                "Update Check failed",
-                HttpStatusCode.NotFound,
-                40401,
-                new IOException("connection closed"));
-
+            UpdateClientLog.Info(
+                _installDirectory,
+                "StartupCheck.Request",
+                "normal check");
             UpdateClientLog.Error(
                 _installDirectory,
                 "StartupCheck.RequestFailed",
-                "Update Check 요청에 실패했습니다. ExitCode=30",
-                exception);
+                "failed check",
+                new IOException("connection closed"));
 
+            Assert.False(Directory.Exists(Path.Combine(
+                _installDirectory,
+                "logs")));
+        }
+
+        [Fact]
+        public void Completed_WritesSuccessAndDeletesExpiredLogs()
+        {
             var logsDirectory = Path.Combine(
                 _installDirectory,
                 "logs");
-            var files = Directory.GetFiles(
-                logsDirectory,
-                "update_*.log");
-            var logPath = Assert.Single(files);
-            var content = File.ReadAllText(logPath);
+            Directory.CreateDirectory(logsDirectory);
 
-            Assert.Contains(
-                "ExceptionType=UpdateServerClientException",
-                content);
-            Assert.Contains(
-                "ExceptionMessage=Update Check failed",
-                content);
-            Assert.Contains("StatusCode=404", content);
-            Assert.Contains("ServerErrorCode=40401", content);
-            Assert.Contains("InnerExceptionType=IOException", content);
-            Assert.Contains(
-                "InnerExceptionMessage=connection closed",
-                content);
+            var oldLog = Path.Combine(
+                logsDirectory,
+                "update_20000101.log");
+            var recentLog = Path.Combine(
+                logsDirectory,
+                "update_20990101.log");
+
+            File.WriteAllText(oldLog, "old");
+            File.WriteAllText(recentLog, "recent");
+            File.SetLastWriteTime(
+                oldLog,
+                DateTime.Now.AddDays(-31));
+            File.SetLastWriteTime(
+                recentLog,
+                DateTime.Now.AddDays(-29));
+
+            UpdateClientLog.Completed(
+                _installDirectory,
+                "job-1",
+                "FileRepair",
+                "3.2.2",
+                2);
+
+            Assert.False(File.Exists(oldLog));
+            Assert.True(File.Exists(recentLog));
+
+            var currentLog = UpdateClientLog.GetLogPath(
+                _installDirectory,
+                DateTime.Now);
+            Assert.True(File.Exists(currentLog));
+
+            var content = File.ReadAllText(currentLog);
+            Assert.Contains("Result=Success", content);
+            Assert.Contains("Mode=FileRepair", content);
+            Assert.Contains("Version=3.2.2", content);
+            Assert.Contains("UpdatedFiles=2", content);
+            Assert.Contains("BackupCleanup=Success", content);
+        }
+
+        [Fact]
+        public void Completed_WhenBackupJobRemains_DoesNotWriteLog()
+        {
+            var backupDirectory = Path.Combine(
+                _installDirectory,
+                "_update",
+                "backups",
+                "job-1");
+            Directory.CreateDirectory(backupDirectory);
+            File.WriteAllText(
+                Path.Combine(backupDirectory, "backup.bin"),
+                "backup");
+
+            UpdateClientLog.Completed(
+                _installDirectory,
+                "job-1",
+                "FileRepair",
+                "3.2.2",
+                1);
+
+            Assert.False(Directory.Exists(Path.Combine(
+                _installDirectory,
+                "logs")));
         }
 
         public void Dispose()
