@@ -31,7 +31,7 @@ public sealed class ForcedFullPackageTransitionTests
     }
 
     [Fact]
-    public async Task CheckAsync_ConfiguredReleaseAtSameVersion_HidesManifestWithoutUpdateLoop()
+    public async Task CheckAsync_ConfiguredReleaseAtSameVersion_ReturnsManifestForRepair()
     {
         var service = CreateService(
             new[] { " pccam_x64:3.2.2 " });
@@ -44,7 +44,9 @@ public sealed class ForcedFullPackageTransitionTests
         Assert.False(result.Data.UpdateAvailable);
         Assert.Equal("ALREADY_LATEST", result.Data.ReasonCode);
         Assert.Equal("3.2.2", result.Data.LatestVersion);
-        Assert.Empty(result.Data.Files);
+
+        var file = Assert.Single(result.Data.Files);
+        Assert.Equal("POSCAM.UpdateClient.exe", file.Path);
     }
 
     [Fact]

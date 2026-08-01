@@ -47,7 +47,7 @@ namespace POSCAM.UpdateClient.Tests.Services
         }
 
         [Fact]
-        public async Task CheckAsync_UpdateAvailableAndOnlyExecutableChanged_TargetsOnlyExecutable()
+        public async Task CheckAsync_UpdateAvailableAndOnlyExecutableChanged_RequiresFullPackage()
         {
             var previousExecutable = Encoding.UTF8.GetBytes("old executable");
             var latestExecutable = Encoding.UTF8.GetBytes("new executable");
@@ -79,13 +79,41 @@ namespace POSCAM.UpdateClient.Tests.Services
                 CancellationToken.None);
 
             Assert.Equal(UpdateClientExitCodes.ApplyRequired, result.ExitCode);
-            Assert.False(result.FullPackageUpdateRequired);
-            Assert.True(result.IncrementalUpdateRequired);
+            Assert.True(result.FullPackageUpdateRequired);
+            Assert.False(result.IncrementalUpdateRequired);
 
             var target = Assert.Single(result.RepairPlan.Targets);
             Assert.Equal("PcCam.exe", target.RelativePath);
             Assert.Equal(UpdateTargetOperations.Replace, target.Operation);
             Assert.Equal(RepairReasons.HashMismatch, target.Reason);
+        }
+
+        [Fact]
+        public async Task CheckAsync_UpdateAvailableAndUpdateClientChanged_RequiresFullPackage()
+        {
+            var fakeClient = new FakeUpdateServerClient
+            {
+                Response = new UpdateCheckResponse
+                {
+                    UpdateAvailable = true,
+                    LatestVersion = "1.0.1",
+                    Files =
+                    {
+                        CreateManifestFile(
+                            "POSCAM.UpdateClient.exe",
+                            Encoding.UTF8.GetBytes("new update client"))
+                    }
+                }
+            };
+
+            var result = await CreateService(fakeClient).CheckAsync(
+                CreateOptions(),
+                CancellationToken.None);
+
+            Assert.Equal(UpdateClientExitCodes.ApplyRequired, result.ExitCode);
+            Assert.True(result.FullPackageUpdateRequired);
+            Assert.False(result.IncrementalUpdateRequired);
+            Assert.Single(result.RepairPlan.Targets);
         }
 
         [Fact]
@@ -176,6 +204,73 @@ namespace POSCAM.UpdateClient.Tests.Services
             Assert.False(result.FullPackageUpdateRequired);
             var target = Assert.Single(result.RepairPlan.Targets);
             Assert.Equal(RepairReasons.Missing, target.Reason);
+        }
+
+        [Fact]
+        public async Task CheckAsync_AlreadyLatest_ExcludesCoreExecutablesAndRepairsOtherFiles()
+        {
+            var fakeClient = new FakeUpdateServerClient
+            {
+                Response = new UpdateCheckResponse
+                {
+                    UpdateAvailable = false,
+                    LatestVersion = "3.2.2",
+                    Files =
+                    {
+                        CreateManifestFile(
+                            "PcCam.exe",
+                            Encoding.UTF8.GetBytes("pccam")),
+                        CreateManifestFile(
+                            "POSCAM.UpdateClient.exe",
+                            Encoding.UTF8.GetBytes("update-client")),
+                        CreateManifestFile(
+                            "PccAuthClient.dll",
+                            Encoding.UTF8.GetBytes("auth-client"))
+                    }
+                }
+            };
+
+            var result = await CreateService(fakeClient).CheckAsync(
+                CreateOptions(),
+                CancellationToken.None);
+
+            Assert.Equal(UpdateClientExitCodes.ApplyRequired, result.ExitCode);
+            Assert.False(result.FullPackageUpdateRequired);
+            Assert.False(result.IncrementalUpdateRequired);
+
+            var target = Assert.Single(result.RepairPlan.Targets);
+            Assert.Equal("PccAuthClient.dll", target.RelativePath);
+            Assert.Equal(RepairReasons.Missing, target.Reason);
+        }
+
+        [Fact]
+        public async Task CheckAsync_AlreadyLatestAndOnlyCoreExecutablesMissing_ReturnsSuccess()
+        {
+            var fakeClient = new FakeUpdateServerClient
+            {
+                Response = new UpdateCheckResponse
+                {
+                    UpdateAvailable = false,
+                    LatestVersion = "3.2.2",
+                    Files =
+                    {
+                        CreateManifestFile(
+                            "PcCam.exe",
+                            Encoding.UTF8.GetBytes("pccam")),
+                        CreateManifestFile(
+                            "POSCAM.UpdateClient.exe",
+                            Encoding.UTF8.GetBytes("update-client"))
+                    }
+                }
+            };
+
+            var result = await CreateService(fakeClient).CheckAsync(
+                CreateOptions(),
+                CancellationToken.None);
+
+            Assert.Equal(UpdateClientExitCodes.Success, result.ExitCode);
+            Assert.False(result.FullPackageUpdateRequired);
+            Assert.False(result.RepairPlan.HasRepairTargets);
         }
 
         [Fact]
