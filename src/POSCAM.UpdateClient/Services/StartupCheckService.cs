@@ -328,7 +328,9 @@ namespace POSCAM.UpdateClient.Services
 
             foreach (var file in files)
             {
-                if (file != null && IsSameVersionRepairExcluded(file.Path))
+                if (file != null
+                    && IsSameVersionRepairExcluded(file.Path)
+                    && IsValidRepairManifestFile(file))
                 {
                     continue;
                 }
@@ -346,7 +348,9 @@ namespace POSCAM.UpdateClient.Services
                 return false;
             }
 
-            var normalizedPath = path.Trim().Replace('\\', '/');
+            var normalizedPath = (path ?? string.Empty)
+                .Trim()
+                .Replace('\\', '/');
 
             foreach (var excludedPath in SameVersionRepairExcludedPaths)
             {
@@ -360,6 +364,15 @@ namespace POSCAM.UpdateClient.Services
             }
 
             return false;
+        }
+
+        private static bool IsValidRepairManifestFile(
+            UpdateManifestFile file)
+        {
+            return !string.IsNullOrWhiteSpace(file.Path)
+                && file.Size >= 0
+                && IsValidSha256(file.Sha256)
+                && !string.IsNullOrWhiteSpace(file.DownloadUrl);
         }
 
         private static InstalledManifest? CreateTargetManifest(
