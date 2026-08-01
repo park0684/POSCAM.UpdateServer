@@ -7,8 +7,11 @@ namespace POSCAM.UpdateClient.Models
     /// </summary>
     internal sealed class StartupCheckResult
     {
-        private const string UpdateClientFileName =
-            "POSCAM.UpdateClient.exe";
+        private static readonly string[] FullPackageProtectedFileNames =
+        {
+            "PcCam.exe",
+            "POSCAM.UpdateClient.exe"
+        };
 
         private bool _fullPackageUpdateRequired;
         private bool _incrementalUpdateRequired;
@@ -16,17 +19,17 @@ namespace POSCAM.UpdateClient.Models
         public int ExitCode { get; set; }
 
         /// <summary>
-        /// 명시적으로 Full Package가 필요하거나 실행 중인 UpdateClient 자체가
-        /// 파일 복구 대상이면 true를 반환한다. UpdateClient는 실행 중인 자기
-        /// 자신을 FileRepair로 직접 교체할 수 없으므로 worker 기반 Full Package
-        /// 적용으로 전환해야 한다.
+        /// 명시적으로 Full Package가 필요하거나 상위 버전 업데이트 계획에
+        /// PC CAM 본체 또는 UpdateClient가 포함되면 true를 반환한다.
+        /// 두 핵심 실행 파일은 파일 단위 적용으로 교체하지 않고 worker 기반
+        /// Full Package 적용으로 전환한다.
         /// </summary>
         public bool FullPackageUpdateRequired
         {
             get
             {
                 return _fullPackageUpdateRequired
-                    || RequiresFullPackageForSelfUpdate();
+                    || RequiresFullPackageForProtectedExecutable();
             }
             set { _fullPackageUpdateRequired = value; }
         }
@@ -47,7 +50,7 @@ namespace POSCAM.UpdateClient.Models
 
         public InstalledManifest? TargetManifest { get; set; }
 
-        private bool RequiresFullPackageForSelfUpdate()
+        private bool RequiresFullPackageForProtectedExecutable()
         {
             if (RepairPlan == null || RepairPlan.Targets == null)
             {
@@ -66,12 +69,16 @@ namespace POSCAM.UpdateClient.Models
                     .Trim()
                     .Replace('\\', '/');
 
-                if (string.Equals(
-                    normalizedPath,
-                    UpdateClientFileName,
-                    StringComparison.OrdinalIgnoreCase))
+                foreach (var protectedFileName in
+                    FullPackageProtectedFileNames)
                 {
-                    return true;
+                    if (string.Equals(
+                        normalizedPath,
+                        protectedFileName,
+                        StringComparison.OrdinalIgnoreCase))
+                    {
+                        return true;
+                    }
                 }
             }
 
