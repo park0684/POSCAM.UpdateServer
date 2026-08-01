@@ -36,7 +36,8 @@ public sealed class ArtifactFileManifestService : IArtifactFileManifestService
         StringComparer.OrdinalIgnoreCase)
     {
         "ffmpeg.exe",
-        "mediamtx.exe"
+        "mediamtx.exe",
+        "PcCam.exe.config"
     };
 
     private readonly ILogger<ArtifactFileManifestService> _logger;

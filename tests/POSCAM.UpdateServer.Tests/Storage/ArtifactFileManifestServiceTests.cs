@@ -16,6 +16,7 @@ public class ArtifactFileManifestServiceTests
         var root = CreateTempDirectory();
         var zipPath = CreateZip(
             ("PCCAM.exe", "app"),
+            ("PcCam.exe.config", "runtime-config"),
             ("providers/DahuaProvider.dll", "provider"),
             ("config/settings.json", "{}"),
             ("logs/app.log", "log"),
@@ -27,8 +28,9 @@ public class ArtifactFileManifestServiceTests
         {
             var files = await service.CreateManifestFilesAsync(zipPath, destination);
 
-            Assert.Equal(2, files.Count);
+            Assert.Equal(3, files.Count);
             Assert.Contains(files, file => file.FilePath == "PCCAM.exe");
+            Assert.Contains(files, file => file.FilePath == "PcCam.exe.config");
             Assert.Contains(files, file => file.FilePath == "providers/DahuaProvider.dll");
             Assert.DoesNotContain(files, file => file.FilePath.StartsWith("config/", StringComparison.OrdinalIgnoreCase));
             Assert.DoesNotContain(files, file => file.FilePath.StartsWith("logs/", StringComparison.OrdinalIgnoreCase));
@@ -41,6 +43,11 @@ public class ArtifactFileManifestServiceTests
             Assert.Equal(appFile.StorageKey, appFile.DownloadPath);
             Assert.StartsWith("pccam/stable/1.0.0/aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa/files/", appFile.StorageKey);
             Assert.True(File.Exists(appFile.PhysicalPath));
+
+            var runtimeConfigFile = files.Single(file => file.FilePath == "PcCam.exe.config");
+            Assert.Equal(Sha256("runtime-config"), runtimeConfigFile.Sha256);
+            Assert.True(runtimeConfigFile.IsRequired);
+            Assert.True(File.Exists(runtimeConfigFile.PhysicalPath));
 
             var providerFile = files.Single(file => file.FilePath == "providers/DahuaProvider.dll");
             Assert.Equal(Sha256("provider"), providerFile.Sha256);
@@ -120,6 +127,9 @@ public class ArtifactFileManifestServiceTests
     [InlineData("providers/DahuaProvider.dll", true)]
     [InlineData("ffmpeg.exe", true)]
     [InlineData("mediamtx.exe", true)]
+    [InlineData("PcCam.exe.config", true)]
+    [InlineData("Other.exe.config", false)]
+    [InlineData("config/PcCam.exe.config", false)]
     [InlineData("config/settings.json", false)]
     [InlineData("logs/app.log", false)]
     [InlineData("cache/runtime.bin", false)]
