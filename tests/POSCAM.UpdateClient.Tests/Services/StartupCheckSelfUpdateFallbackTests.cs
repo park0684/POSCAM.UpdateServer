@@ -26,7 +26,7 @@ namespace POSCAM.UpdateClient.Tests.Services
         }
 
         [Fact]
-        public async Task CheckAsync_AlreadyLatestAndUpdateClientMissing_RequiresFullPackage()
+        public async Task CheckAsync_AlreadyLatestAndUpdateClientMissing_ExcludesFileRepair()
         {
             var fakeClient = new FakeUpdateServerClient
             {
@@ -48,16 +48,11 @@ namespace POSCAM.UpdateClient.Tests.Services
                 CancellationToken.None);
 
             Assert.Equal(
-                UpdateClientExitCodes.ApplyRequired,
+                UpdateClientExitCodes.Success,
                 result.ExitCode);
-            Assert.True(result.FullPackageUpdateRequired);
+            Assert.False(result.FullPackageUpdateRequired);
             Assert.False(result.IncrementalUpdateRequired);
-
-            var target = Assert.Single(result.RepairPlan.Targets);
-            Assert.Equal(
-                "POSCAM.UpdateClient.exe",
-                target.RelativePath);
-            Assert.Equal(RepairReasons.Missing, target.Reason);
+            Assert.False(result.RepairPlan.HasRepairTargets);
         }
 
         [Fact]
